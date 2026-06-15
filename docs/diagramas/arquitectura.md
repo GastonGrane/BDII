@@ -1,0 +1,20 @@
+```mermaid
+graph LR
+    subgraph FE ["Frontend  ·  React + Vite  (:5173)"]
+        UI["Componentes JSX\nLogin · Eventos · MisCosas\nAdminEstadios · AdminEventos · Validar"]
+        CL["client.js\nfetch /api/* + JSESSIONID"]
+        UI --> CL
+    end
+
+    subgraph BE ["Backend  ·  Spring Boot  (:8080)"]
+        CTR["Controllers\nHTTP · sesión · códigos de estado"]
+        SVC["Services\nlógica de negocio · validaciones RNE"]
+        REP["Repositories\nJPA / Hibernate · Spring Data"]
+        CTR --> SVC --> REP
+    end
+
+    DB[("MySQL 8\nCD_Grupo4\n―――――――\nTablas · Triggers\nStored Procedures\nVistas")]
+
+    CL <-->|"JSON\nHTTP"| CTR
+    REP <-->|"SQL\nJDBC"| DB
+```
