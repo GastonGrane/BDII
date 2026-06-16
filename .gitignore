@@ -6,14 +6,10 @@ docs/Informe_MER_Normalizacion_Ticketing.pdf
 # Java / Spring Boot
 target/
 *.class
-*.jar
 *.war
 *.log
 *.err
-.mvn/
-!.mvn/wrapper/
-!.mvn/wrapper/maven-wrapper.properties
-!.mvn/wrapper/maven-wrapper.jar
+# Nota: se versiona backend/.mvn/wrapper/ para que ./mvnw funcione sin Maven global.
 
 # React / Node
 node_modules/

@@ -41,6 +41,32 @@ BEGIN
 END //
 
 
+-- RNE 3: la capacidad del sector es un límite duro — no se puede sobre-vender (sobre-aforo).
+-- Disparador: BEFORE INSERT ON ENTRADA — cuenta las entradas ya emitidas para el mismo
+-- (EventoID, EstadioID, LetraSector) y las compara con SECTOR.CapacidadMax.
+-- Defensa en profundidad: la aplicación además toma un lock pesimista sobre la fila de SECTOR
+-- (ver VentaService) para serializar compras concurrentes del mismo sector y evitar la carrera.
+CREATE TRIGGER tr_entrada_capacidad
+BEFORE INSERT ON ENTRADA
+FOR EACH ROW
+BEGIN
+    DECLARE v_emitidas INT;
+    DECLARE v_capacidad INT;
+    SELECT COUNT(*) INTO v_emitidas
+    FROM ENTRADA
+    WHERE EventoID = NEW.EventoID
+      AND EstadioID = NEW.EstadioID
+      AND LetraSector = NEW.LetraSector;
+    SELECT CapacidadMax INTO v_capacidad
+    FROM SECTOR
+    WHERE EstadioID = NEW.EstadioID AND LetraSector = NEW.LetraSector;
+    IF v_emitidas >= v_capacidad THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'RNE 3: capacidad del sector agotada para el evento (sobre-aforo)';
+    END IF;
+END //
+
+
 -- RNE 7: el estado Consumida es irreversible.
 -- Disparador: BEFORE UPDATE ON ENTRADA — rechaza cualquier cambio que saque una entrada de Consumida.
 -- También previene reactivar una entrada consumida a través de una transferencia posterior

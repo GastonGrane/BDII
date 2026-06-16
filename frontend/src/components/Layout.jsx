@@ -14,6 +14,7 @@ const NAV = {
   ADMINISTRADOR: [
     { to: '/admin/estadios', label: 'Estadios' },
     { to: '/admin/eventos',  label: 'Eventos' },
+    { to: '/admin/reportes', label: 'Reportes' },
   ],
 }
 

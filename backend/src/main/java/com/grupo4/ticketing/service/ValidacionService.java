@@ -30,15 +30,18 @@ public class ValidacionService {
     private final DispositivoRepository dispositivoRepo;
     private final FuncionarioRepository  funcionarioRepo;
     private final ValidacionRepository   validacionRepo;
+    private final TokenService           tokenService;
 
     public ValidacionService(TokenQrRepository tokenRepo,
                              DispositivoRepository dispositivoRepo,
                              FuncionarioRepository funcionarioRepo,
-                             ValidacionRepository validacionRepo) {
+                             ValidacionRepository validacionRepo,
+                             TokenService tokenService) {
         this.tokenRepo      = tokenRepo;
         this.dispositivoRepo = dispositivoRepo;
         this.funcionarioRepo = funcionarioRepo;
         this.validacionRepo  = validacionRepo;
+        this.tokenService    = tokenService;
     }
 
     @Transactional
@@ -48,6 +51,14 @@ public class ValidacionService {
         var token = tokenRepo.findByCodigoQRAndActivoTrue(req.codigoQR())
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "Código QR inválido o no vigente"));
+
+        // 1b. Entrada Dinámica (RNE 10): el token debe estar dentro de su ventana de 30s.
+        //     Un token vencido no se acepta aunque siga marcado como activo.
+        if (!tokenService.estaVigente(token)) {
+            throw new ResponseStatusException(HttpStatus.GONE,
+                    "Token vencido (ventana de " + TokenService.VENTANA_SEGUNDOS
+                    + "s). El asistente debe mostrar el QR actualizado.");
+        }
 
         // 2. Verificar que el dispositivo pertenece al funcionario autenticado (RNE 11)
         Dispositivo dispositivo = dispositivoRepo.findById(req.dispositivoId())

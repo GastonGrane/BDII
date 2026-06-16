@@ -68,8 +68,8 @@ BEGIN
     BEGIN
         DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
             GET DIAGNOSTICS CONDITION 1 v_msg = MESSAGE_TEXT;
-        INSERT INTO TOKEN_QR (CodigoQR, GeneradoEn, Activo, EntradaID)
-        VALUES ('QR-E1-DUP', '2026-06-10 10:06:00', TRUE, 1);
+        INSERT INTO TOKEN_QR (CodigoQR, GeneradoEn, ExpiraEn, Activo, EntradaID)
+        VALUES ('QR-E1-DUP', '2026-06-10 10:06:00', '2026-06-10 10:06:30', TRUE, 1);
     END;
     INSERT INTO _test_resultados (prueba, resultado, detalle) VALUES (
         'T02 Token único activo: 2do activo rechazado',

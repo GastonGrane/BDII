@@ -2,7 +2,6 @@ package com.grupo4.ticketing.service;
 
 import com.grupo4.ticketing.dto.LoginResponse;
 import com.grupo4.ticketing.dto.RegistroRequest;
-import com.grupo4.ticketing.entity.Usuario;
 import com.grupo4.ticketing.entity.UsuarioGeneral;
 import com.grupo4.ticketing.repository.*;
 import org.springframework.stereotype.Service;
@@ -19,36 +18,24 @@ public class AuthService {
     private final AdministradorRepository adminRepo;
     private final FuncionarioRepository funcRepo;
     private final UsuarioGeneralRepository ugRepo;
+    private final UsuarioService usuarioService;
 
     public AuthService(UsuarioRepository usuarioRepo,
                        AdministradorRepository adminRepo,
                        FuncionarioRepository funcRepo,
-                       UsuarioGeneralRepository ugRepo) {
+                       UsuarioGeneralRepository ugRepo,
+                       UsuarioService usuarioService) {
         this.usuarioRepo = usuarioRepo;
         this.adminRepo   = adminRepo;
         this.funcRepo    = funcRepo;
         this.ugRepo      = ugRepo;
+        this.usuarioService = usuarioService;
     }
 
-    // Registra un usuario nuevo como USUARIO_GENERAL.
+    // Registra un usuario nuevo como USUARIO_GENERAL (con sus teléfonos).
     @Transactional
     public void registrar(RegistroRequest req) {
-        if (usuarioRepo.existsById(req.mail())) {
-            throw new IllegalArgumentException("El mail ya está registrado");
-        }
-
-        Usuario u = new Usuario();
-        u.setMail(req.mail());
-        u.setContrasena(req.contrasena());
-        u.setTipoDoc(req.tipoDoc());
-        u.setPaisDoc(req.paisDoc());
-        u.setNroDoc(req.nroDoc());
-        u.setPaisDir(req.paisDir());
-        u.setLocalidad(req.localidad());
-        u.setCalle(req.calle());
-        u.setNroPuerta(req.nroPuerta());
-        u.setCodPostal(req.codPostal());
-        usuarioRepo.save(u);
+        usuarioService.crearUsuarioBase(req);
 
         UsuarioGeneral ug = new UsuarioGeneral();
         ug.setMailUsuario(req.mail());

@@ -11,4 +11,7 @@ public interface TransferenciaRepository extends JpaRepository<Transferencia, Lo
 
     // Cuenta transfers no rechazadas de una entrada — para pre-validar RNE 2
     long countByEntradaEntradaIdAndEstadoNot(Long entradaId, EstadoTransferencia estado);
+
+    // Historial ordenado de transferencias de una entrada — base de la cadena de custodia.
+    List<Transferencia> findByEntradaEntradaIdOrderByFechaSolAsc(Long entradaId);
 }

@@ -8,6 +8,7 @@ import MisCosas      from './pages/MisCosas'
 import Validar       from './pages/Validar'
 import AdminEstadios from './pages/AdminEstadios'
 import AdminEventos  from './pages/AdminEventos'
+import AdminReportes from './pages/AdminReportes'
 
 function RequireAuth({ roles, children }) {
   const { user } = useAuth()
@@ -58,6 +59,9 @@ function AppRoutes() {
         } />
         <Route path="/admin/eventos" element={
           <RequireAuth roles={['ADMINISTRADOR']}><AdminEventos /></RequireAuth>
+        } />
+        <Route path="/admin/reportes" element={
+          <RequireAuth roles={['ADMINISTRADOR']}><AdminReportes /></RequireAuth>
         } />
 
         <Route path="*" element={<Navigate to="/" replace />} />

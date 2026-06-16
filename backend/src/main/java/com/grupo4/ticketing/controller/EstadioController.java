@@ -24,28 +24,30 @@ public class EstadioController {
         this.adminService = adminService;
     }
 
-    // GET /api/estadios — listado con sectores (solo ADMINISTRADOR)
+    // GET /api/estadios — estadios de la jurisdicción del administrador (solo ADMINISTRADOR)
     @GetMapping
     public ResponseEntity<?> listarEstadios(HttpSession session) {
+        String mail;
         try {
-            SessionUtils.requireRol(session, "ADMINISTRADOR");
+            mail = SessionUtils.requireRol(session, "ADMINISTRADOR");
         } catch (ResponseStatusException e) {
             return ResponseEntity.status(e.getStatusCode()).body(new ErrorResponse(e.getReason()));
         }
-        return ResponseEntity.ok(adminService.listarEstadios());
+        return ResponseEntity.ok(adminService.listarEstadios(mail));
     }
 
-    // POST /api/estadios — alta de estadio (solo ADMINISTRADOR)
+    // POST /api/estadios — alta de estadio (solo ADMINISTRADOR, dentro de su jurisdicción)
     @PostMapping
     public ResponseEntity<?> crearEstadio(@RequestBody EstadioRequest req, HttpSession session) {
+        String mail;
         try {
-            SessionUtils.requireRol(session, "ADMINISTRADOR");
+            mail = SessionUtils.requireRol(session, "ADMINISTRADOR");
         } catch (ResponseStatusException e) {
             return ResponseEntity.status(e.getStatusCode()).body(new ErrorResponse(e.getReason()));
         }
 
         try {
-            return ResponseEntity.status(HttpStatus.CREATED).body(adminService.crearEstadio(req));
+            return ResponseEntity.status(HttpStatus.CREATED).body(adminService.crearEstadio(mail, req));
         } catch (ResponseStatusException e) {
             return ResponseEntity.status(e.getStatusCode()).body(new ErrorResponse(e.getReason()));
         } catch (IllegalArgumentException e) {
@@ -53,19 +55,20 @@ public class EstadioController {
         }
     }
 
-    // POST /api/estadios/{id}/sectores — alta de sector (solo ADMINISTRADOR)
+    // POST /api/estadios/{id}/sectores — alta de sector (solo ADMINISTRADOR, dentro de su jurisdicción)
     @PostMapping("/{id}/sectores")
     public ResponseEntity<?> crearSector(@PathVariable Long id,
                                          @RequestBody SectorRequest req,
                                          HttpSession session) {
+        String mail;
         try {
-            SessionUtils.requireRol(session, "ADMINISTRADOR");
+            mail = SessionUtils.requireRol(session, "ADMINISTRADOR");
         } catch (ResponseStatusException e) {
             return ResponseEntity.status(e.getStatusCode()).body(new ErrorResponse(e.getReason()));
         }
 
         try {
-            return ResponseEntity.status(HttpStatus.CREATED).body(adminService.crearSector(id, req));
+            return ResponseEntity.status(HttpStatus.CREATED).body(adminService.crearSector(mail, id, req));
         } catch (ResponseStatusException e) {
             return ResponseEntity.status(e.getStatusCode()).body(new ErrorResponse(e.getReason()));
         } catch (IllegalArgumentException e) {

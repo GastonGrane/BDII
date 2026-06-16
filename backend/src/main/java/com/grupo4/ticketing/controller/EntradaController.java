@@ -29,4 +29,36 @@ public class EntradaController {
         }
         return ResponseEntity.ok(entradaService.misEntradas(mail));
     }
+
+    // GET /api/entradas/{id}/token — token dinámico vigente (refresco cada 30s, RNE 10)
+    @GetMapping("/{id}/token")
+    public ResponseEntity<?> tokenVigente(@PathVariable Long id, HttpSession session) {
+        String mail;
+        try {
+            mail = SessionUtils.requireRol(session, "USUARIO_GENERAL");
+        } catch (ResponseStatusException e) {
+            return ResponseEntity.status(e.getStatusCode()).body(new ErrorResponse(e.getReason()));
+        }
+        try {
+            return ResponseEntity.ok(entradaService.tokenVigente(mail, id));
+        } catch (ResponseStatusException e) {
+            return ResponseEntity.status(e.getStatusCode()).body(new ErrorResponse(e.getReason()));
+        }
+    }
+
+    // GET /api/entradas/{id}/custodia — cadena de custodia de la entrada
+    @GetMapping("/{id}/custodia")
+    public ResponseEntity<?> custodia(@PathVariable Long id, HttpSession session) {
+        String mail;
+        try {
+            mail = SessionUtils.requireRol(session, "USUARIO_GENERAL");
+        } catch (ResponseStatusException e) {
+            return ResponseEntity.status(e.getStatusCode()).body(new ErrorResponse(e.getReason()));
+        }
+        try {
+            return ResponseEntity.ok(entradaService.cadenaCustodia(mail, id));
+        } catch (ResponseStatusException e) {
+            return ResponseEntity.status(e.getStatusCode()).body(new ErrorResponse(e.getReason()));
+        }
+    }
 }

@@ -18,6 +18,10 @@ public class TokenQr {
     @Column(name = "GeneradoEn", nullable = false)
     private LocalDateTime generadoEn;
 
+    // Entrada Dinámica (RNE 10): el token vence a los 30 segundos de generado.
+    @Column(name = "ExpiraEn", nullable = false)
+    private LocalDateTime expiraEn;
+
     @Column(name = "Activo", nullable = false)
     private Boolean activo = false;
 
@@ -33,6 +37,8 @@ public class TokenQr {
     public void setCodigoQR(String codigoQR) { this.codigoQR = codigoQR; }
     public LocalDateTime getGeneradoEn() { return generadoEn; }
     public void setGeneradoEn(LocalDateTime generadoEn) { this.generadoEn = generadoEn; }
+    public LocalDateTime getExpiraEn() { return expiraEn; }
+    public void setExpiraEn(LocalDateTime expiraEn) { this.expiraEn = expiraEn; }
     public Boolean getActivo() { return activo; }
     public void setActivo(Boolean activo) { this.activo = activo; }
     public Entrada getEntrada() { return entrada; }

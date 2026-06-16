@@ -285,18 +285,24 @@ CREATE TABLE IF NOT EXISTS TRANSFERENCIA (
 -- Orden: TOKEN_QR → DISPOSITIVO → VALIDACION → ASIGNACION_FUNCIONARIO
 -- -----------------------------------------------------------------------------
 
--- TOKEN_QR: se genera un token nuevo cada 30 seg por entrada activa (RNE 10).
--- DEC-02: tabla de alto volumen; considerar limpieza de tokens inactivos como mejora futura.
+-- TOKEN_QR: Entrada Dinámica (RNE 10). Cada entrada activa tiene un token vigente
+-- que vence a los 30 segundos. Cuando el cliente lo solicita y ya venció, el backend
+-- desactiva el anterior y genera uno nuevo (ver TokenService). Las filas anteriores
+-- quedan como histórico (cadena de tokens). DEC-02: limpieza de tokens viejos = mejora futura.
 CREATE TABLE IF NOT EXISTS TOKEN_QR (
     TokenID     INT UNSIGNED   NOT NULL AUTO_INCREMENT,
     CodigoQR    VARCHAR(500)   NOT NULL,
     GeneradoEn  DATETIME       NOT NULL,
+    -- Ventana de validez de 30 segundos: ExpiraEn = GeneradoEn + 30s.
+    -- Un token vencido no puede validarse (RNE 10).
+    ExpiraEn    DATETIME       NOT NULL,
     -- RNE Activo: booleano; solo un token activo por entrada a la vez
     Activo      BOOLEAN        NOT NULL DEFAULT FALSE,
     EntradaID   INT UNSIGNED   NOT NULL,
 
     CONSTRAINT pk_token_qr       PRIMARY KEY (TokenID),
     CONSTRAINT uq_token_codigo   UNIQUE (CodigoQR),
+    CONSTRAINT chk_token_ventana CHECK (ExpiraEn > GeneradoEn),
     CONSTRAINT fk_token_entrada  FOREIGN KEY (EntradaID)
         REFERENCES ENTRADA(EntradaID)
         ON DELETE RESTRICT ON UPDATE CASCADE,
