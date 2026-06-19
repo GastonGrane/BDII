@@ -27,11 +27,6 @@ DELIMITER //
 -- =====================================================
 -- Acá controlamos que una venta no junte más de 5 entradas.
 -- Antes de insertar contamos cuántas ya tiene esa VentaID; si llega a 5, cortamos.
---
--- Ojo con la concurrencia: dos transacciones a la vez sobre la misma venta podrían pasar
--- las dos este chequeo si leen antes de que la otra confirme. Por eso el backend crea la
--- VENTA y sus ENTRADAs en una sola transacción con SELECT ... FOR UPDATE sobre la venta,
--- así las inserciones del mismo comprador se serializan.
 CREATE TRIGGER tr_entrada_limite_venta
 BEFORE INSERT ON ENTRADA
 FOR EACH ROW
@@ -51,13 +46,6 @@ END //
 -- Acá cuidamos que no se vendan más entradas que la capacidad del sector. Antes de
 -- insertar contamos las entradas ya emitidas para ese evento+sector y las comparamos
 -- contra SECTOR.CapacidadMax.
---
--- Esto NO es RNE 3. RNE 3 ("un evento debe habilitar al menos un sector") no vive en la
--- base: lo resuelve el backend (AdminService.crearEvento), porque EVENTO_SECTOR se inserta
--- después del EVENTO y MySQL no tiene constraints diferidas para chequearlo al vuelo.
---
--- Además del trigger, el backend toma un lock sobre la fila del SECTOR (VentaService) para
--- serializar compras simultáneas del mismo sector. Defensa en dos capas.
 CREATE TRIGGER tr_entrada_capacidad
 BEFORE INSERT ON ENTRADA
 FOR EACH ROW
@@ -553,7 +541,7 @@ END //
 DELIMITER ;
 
 -- =====================================================
--- RNE 3 (la parte que sí vive en la base) — sectores del mismo estadio
+-- RNE 3 — sectores del mismo estadio
 -- =====================================================
 -- Acá cuidamos que los sectores que se habilitan para un evento sean del estadio donde se
 -- juega, y no de otro por error. Comparamos el EstadioID del sector contra el del evento.
