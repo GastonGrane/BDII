@@ -1,31 +1,32 @@
 -- =============================================================================
--- test_triggers.sql — Suite de pruebas de triggers y stored procedures
+-- test_triggers.sql — Pruebas de los triggers y los SPs
 -- Sistema de Ticketing Mundial 2026 — Grupo 4
 --
--- Requisito: ejecutar DESPUÉS de schema.sql + triggers.sql + seed.sql.
--- Prueba los 13 triggers y los 2 SPs contra los datos de seed.sql.
--- Los objetos de prueba (_test_resultados, sp_test_triggers) se eliminan al final.
+-- Importante: correr DESPUÉS de schema.sql + triggers.sql + seed.sql.
+-- Cada prueba dispara una operación que debería pasar o fallar, y deja el resultado
+-- (PASS/FAIL) en una tabla temporal. Los objetos de prueba se borran al final.
 --
--- Cobertura:
---   T01  RNE 1  — límite de 5 entradas por venta
---   T02         — un solo token activo por entrada
---   T03  RNE 6  — transferencia crea estado PendienteTransferencia
---   T04         — aceptar transferencia actualiza propietario y estado
---   T05  RNE 6  — no transferir entrada PendienteTransferencia
---   T06         — validación deja entrada Consumida y token inactivo
---   T07  RNE 7  — Consumida es irreversible
---   T08  RNE 6  — no transferir entrada Consumida
---   T09  RNE 9  — validar con token inactivo rechazado
---   T10  RNE 2  — límite de 3 transferencias por entrada
---   T11a RNE 4  — evento solapado rechazado
---   T11b RNE 4  — evento fuera de ventana aceptado
---   T12  RNE 12 — INSERT directo en COMISION con vigente activa rechazado
---   T13  RNE 12 — sp_nueva_comision cierra anterior y abre nueva (con transacción)
---   T14  PEN-01 — aceptar transferencia de entrada ya consumida rechazado
---   T15  RNE 3  — habilitar en un evento un sector de otro estadio rechazado
+-- Qué cubre cada prueba (sirve de checklist para la defensa):
+--   T01  RNE 1  — la 6ta entrada de una venta se rechaza
+--   T02         — no se puede tener dos tokens activos en la misma entrada
+--   T03  RNE 6  — al pedir la transferencia la entrada queda PendienteTransferencia
+--   T04         — al aceptar, cambia el propietario y la entrada vuelve a Activa
+--   T05  RNE 6  — no se transfiere una entrada que está PendienteTransferencia
+--   T06         — al validar, la entrada queda Consumida y su token inactivo
+--   T07  RNE 7  — sacar una entrada de Consumida se rechaza
+--   T08  RNE 6  — no se transfiere una entrada Consumida
+--   T09  RNE 9  — validar con un token inactivo se rechaza
+--   T10  RNE 2  — la 4ta transferencia de una entrada se rechaza
+--   T11a RNE 4  — un evento que se solapa en el mismo estadio se rechaza
+--   T11b RNE 4  — un evento fuera de la ventana de 4h se acepta
+--   T12  RNE 12 — un INSERT directo en COMISION con una vigente activa se rechaza
+--   T13  RNE 12 — sp_nueva_comision cierra la anterior y abre la nueva (en transacción)
+--   T14  PEN-01 — aceptar una transferencia de una entrada ya consumida se rechaza
+--   T15  RNE 3  — habilitar en un evento un sector de OTRO estadio se rechaza
+--                 (es la parte de RNE 3 que vive en la base: consistencia sector-estadio)
 --   T16  RNE 5  — cobertura por funcionario: A cubierto, B pendiente, luego B cubierto
---   T17  RNE 5  — validación en evento no asignado no cuenta para la cobertura
---   T18  RNE 10 — validar con token activo pero vencido (ExpiraEn <= NOW()) rechazado
+--   T17  RNE 5  — una validación en un evento no asignado no suma a la cobertura
+--   T18  RNE 10 — validar con un token activo pero vencido (ExpiraEn <= NOW()) se rechaza
 -- =============================================================================
 
 USE CD_Grupo4;
@@ -335,9 +336,10 @@ BEGIN
     );
 
     -- =========================================================================
-    -- T15 — RNE 3: habilitar en un evento un sector que no pertenece a su estadio
-    --        debe rechazarse (trigger tr_evento_sector_estadio_insert).
-    --        El evento 1 está en el estadio 1; intentamos habilitar un sector del estadio 999.
+    -- T15 — RNE 3 (consistencia sector-estadio): habilitar para un evento un sector
+    --        que no es de su estadio debe rechazarse (trigger tr_evento_sector_estadio_insert).
+    --        El evento 1 está en el estadio 1; probamos meter un sector del estadio 999.
+    --        Nota: la otra parte de RNE 3 ("al menos un sector") vive en backend, no acá.
     -- =========================================================================
     SET v_msg = NULL;
     BEGIN

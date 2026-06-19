@@ -1,10 +1,10 @@
 -- =============================================================================
--- seed.sql — Datos base para demostración y desarrollo
+-- seed.sql — Datos de ejemplo para la demo y el desarrollo
 -- Sistema de Ticketing Mundial 2026 — Grupo 4
 --
--- Requisito: ejecutar sobre esquema limpio (schema.sql + triggers.sql previos).
--- Solo contiene datos representativos del dominio — sin lógica de prueba.
--- Para ejecutar los tests de triggers: ver sql/test_triggers.sql
+-- Importante: correr sobre un esquema limpio (schema.sql + triggers.sql antes).
+-- Son solo datos representativos del dominio, sin lógica de prueba.
+-- Los tests de triggers están aparte, en sql/test_triggers.sql.
 -- =============================================================================
 
 USE CD_Grupo4;
@@ -73,9 +73,10 @@ VALUES
   (4, 'Activa', 150.00, 1, 1, 1, 'A', 'user1@test.com'),
   (5, 'Activa', 150.00, 1, 1, 1, 'A', 'user1@test.com');
 
--- Un token activo por entrada. ExpiraEn = GeneradoEn + 30s (ventana RNE 10).
--- Estos tokens del seed ya están vencidos respecto a la fecha actual: al abrir
--- "Mis entradas" el backend genera uno nuevo vigente (ver TokenService).
+-- Un token activo por entrada, con la ventana de 30s de RNE 10 (ExpiraEn = GeneradoEn + 30s).
+-- Estos tokens del seed nacen ya vencidos respecto de hoy: al abrir "Mis entradas" el
+-- backend genera uno nuevo vigente (ver TokenService). Por eso los tests los renuevan antes
+-- de validar.
 INSERT INTO TOKEN_QR (TokenID, CodigoQR, GeneradoEn, ExpiraEn, Activo, EntradaID)
 VALUES
   (1, 'QR-E1-001', '2026-06-10 10:05:00', '2026-06-10 10:05:30', TRUE, 1),
@@ -119,7 +120,7 @@ VALUES
   (9,  'QR-E9-001',  '2026-06-12 09:35:00', '2026-06-12 09:35:30', TRUE, 9),
   (10, 'QR-E10-001', '2026-06-12 09:35:00', '2026-06-12 09:35:30', TRUE, 10);
 
--- Cobertura (RNE 5): el funcionario queda asignado también al sector B del evento 1.
--- Como solo valida el sector A en la demo, sp_verificar_cobertura(1) mostrará B como pendiente.
+-- Cobertura (RNE 5): dejamos al funcionario asignado también al sector B del evento 1.
+-- Como en la demo solo valida el sector A, sp_verificar_cobertura(1) muestra B como pendiente.
 INSERT INTO ASIGNACION_FUNCIONARIO (Mail_Funcionario, EventoID, EstadioID, LetraSector)
 VALUES ('func@ticketing.com', 1, 1, 'B');

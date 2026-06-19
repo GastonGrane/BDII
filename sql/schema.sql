@@ -1,46 +1,52 @@
 -- =============================================================================
 -- Sistema de Ticketing — Mundial 2026
 -- Grupo 4: Sharon Bentos, Gaston Grané, Axel Hernández
--- Base de datos: IC_Grupo4 (MySQL, host mysql.reto-ucu.net:50006)
+-- Base de datos: CD_Grupo4 (MySQL, host mysql.reto-ucu.net:50006)
 --
--- Ejecutar en orden: cada bloque depende de los anteriores.
--- Motor: InnoDB (soporte de FK y transacciones).
--- Juego de caracteres: utf8mb4 (soporta emojis y caracteres internacionales).
+-- Importante: correr los bloques en orden, cada uno se apoya en los de arriba.
+-- Usamos InnoDB para tener FK y transacciones, y utf8mb4 para acentos y emojis.
 -- =============================================================================
 
 USE CD_Grupo4;
 
 -- -----------------------------------------------------------------------------
 -- MÓDULO 1: USUARIOS
--- Orden: USUARIO → subtipos → TELEFONO
+-- Orden de creación: USUARIO → subtipos → TELEFONO
 -- -----------------------------------------------------------------------------
 
--- USUARIO: superclase del sistema de herencia. Contiene datos comunes a todos los roles
--- (credenciales, documento de identidad, dirección). Su PK (Mail) es también PK de los subtipos.
+-- =====================================================
+-- USUARIO: la tabla padre de todos los roles
+-- =====================================================
+-- Acá guardamos lo común a cualquier usuario: login, documento y dirección.
+-- El Mail es la PK y también la van a usar los subtipos, así armamos la herencia.
+-- El UNIQUE de (PaisDoc, TipoDoc, NroDoc) defiende que un mismo documento no
+-- aparezca en dos personas distintas. CodPostal queda opcional porque no todos
+-- los países lo usan.
 CREATE TABLE IF NOT EXISTS USUARIO (
     Mail              VARCHAR(254)                     NOT NULL,
     Contrasena        VARCHAR(255)                     NOT NULL,
     PaisDoc           VARCHAR(50)                      NOT NULL,
-    -- RNE TipoDoc: dominio fijo {CI, Pasaporte, Otro}
     TipoDoc           ENUM('CI', 'Pasaporte', 'Otro') NOT NULL,
     NroDoc            VARCHAR(20)                      NOT NULL,
     PaisDir           VARCHAR(50)                      NOT NULL,
     Localidad         VARCHAR(100)                     NOT NULL,
     Calle             VARCHAR(150)                     NOT NULL,
     NroPuerta         VARCHAR(20)                      NOT NULL,
-    -- CodPostal nullable: no todos los países lo requieren
     CodPostal         VARCHAR(10)                      NULL,
 
     CONSTRAINT pk_usuario PRIMARY KEY (Mail),
-    -- Clave alternativa: un documento pertenece a una sola persona
     CONSTRAINT uq_usuario_documento UNIQUE (PaisDoc, TipoDoc, NroDoc)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 
--- Patrón "tabla por subclase": PK de cada subtipo es también FK hacia USUARIO.
--- Garantiza la especialización disjunta y total del MER.
+-- =====================================================
+-- Subtipos de USUARIO (herencia "tabla por subclase")
+-- =====================================================
+-- Cada subtipo usa el mismo Mail como PK y, a la vez, como FK hacia USUARIO.
+-- Así la especialización queda disjunta y total: una fila de subtipo siempre
+-- apunta a un USUARIO que existe.
 
--- ADMINISTRADOR: subtipo de USUARIO que da de alta estadios y eventos. PK = FK hacia USUARIO.
+-- ADMINISTRADOR: el rol que da de alta estadios y eventos.
 CREATE TABLE IF NOT EXISTS ADMINISTRADOR (
     Mail_Usuario      VARCHAR(254)  NOT NULL,
     PaisSede          VARCHAR(100)  NOT NULL,
@@ -53,7 +59,7 @@ CREATE TABLE IF NOT EXISTS ADMINISTRADOR (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 
--- FUNCIONARIO: subtipo de USUARIO que valida entradas en el estadio con un dispositivo asignado.
+-- FUNCIONARIO: el rol que valida entradas en el estadio con un dispositivo asignado.
 CREATE TABLE IF NOT EXISTS FUNCIONARIO (
     Mail_Usuario  VARCHAR(254)  NOT NULL,
     NroLegajo     VARCHAR(20)   NOT NULL,
@@ -66,10 +72,11 @@ CREATE TABLE IF NOT EXISTS FUNCIONARIO (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 
+-- USUARIO_GENERAL: el comprador final. EstadoVerificacion arranca en 'Pendiente'.
+-- (El dominio de ese estado quedó como supuesto del modelo lógico — DEC-01.)
 CREATE TABLE IF NOT EXISTS USUARIO_GENERAL (
     Mail_Usuario        VARCHAR(254)                             NOT NULL,
     FechaRegistro       DATE                                     NOT NULL,
-    -- DEC-01: dominio definido como supuesto en el modelo lógico (ver docs/decisiones.md)
     EstadoVerificacion  ENUM('Pendiente', 'Verificado', 'Rechazado')
                                                                  NOT NULL
                                                                  DEFAULT 'Pendiente',
@@ -81,7 +88,11 @@ CREATE TABLE IF NOT EXISTS USUARIO_GENERAL (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 
--- TELEFONO: atributo multivaluado de USUARIO → tabla 1:N
+-- =====================================================
+-- TELEFONO: los teléfonos de un usuario
+-- =====================================================
+-- Como un usuario puede tener varios, va en una tabla aparte 1:N.
+-- El borrado es CASCADE: si se elimina el usuario, se van también sus teléfonos.
 CREATE TABLE IF NOT EXISTS TELEFONO (
     Mail_Usuario  VARCHAR(254)  NOT NULL,
     Telefono      VARCHAR(20)   NOT NULL,
@@ -90,16 +101,20 @@ CREATE TABLE IF NOT EXISTS TELEFONO (
     CONSTRAINT fk_tel_usuario    FOREIGN KEY (Mail_Usuario)
         REFERENCES USUARIO(Mail)
         ON DELETE CASCADE ON UPDATE CASCADE
-        -- CASCADE: si se borra un usuario, se borran sus teléfonos
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 
 -- -----------------------------------------------------------------------------
 -- MÓDULO 2: INFRAESTRUCTURA Y EVENTOS
--- Orden: ESTADIO → SECTOR → EVENTO → EVENTO_SECTOR
+-- Orden de creación: ESTADIO → SECTOR → EVENTO → EVENTO_SECTOR
 -- -----------------------------------------------------------------------------
 
--- ESTADIO: sede física de los partidos. Sus sectores (A-D) son entidades débiles con PK compuesta.
+-- =====================================================
+-- ESTADIO y sus SECTOR
+-- =====================================================
+-- El estadio es la sede física. Sus sectores (A a D) son entidad débil: dependen
+-- del estadio y tienen PK compuesta (EstadioID, LetraSector).
+-- Los CHECK defienden que la capacidad y el costo siempre sean mayores a 0.
 CREATE TABLE IF NOT EXISTS ESTADIO (
     EstadioID  INT UNSIGNED   NOT NULL AUTO_INCREMENT,
     Nombre     VARCHAR(100)   NOT NULL,
@@ -110,14 +125,10 @@ CREATE TABLE IF NOT EXISTS ESTADIO (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 
--- SECTOR: entidad débil de ESTADIO — PK compuesta (EstadioID, LetraSector)
 CREATE TABLE IF NOT EXISTS SECTOR (
     EstadioID     INT UNSIGNED          NOT NULL,
-    -- RNE LetraSector: dominio fijo {A, B, C, D}
     LetraSector   ENUM('A','B','C','D') NOT NULL,
-    -- RNE CapacidadMax: entero mayor a 0
     CapacidadMax  INT                   NOT NULL,
-    -- RNE CostoEntrada: valor numérico mayor a 0
     CostoEntrada  DECIMAL(10,2)         NOT NULL,
 
     CONSTRAINT pk_sector        PRIMARY KEY (EstadioID, LetraSector),
@@ -129,12 +140,19 @@ CREATE TABLE IF NOT EXISTS SECTOR (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 
--- EVENTO: FK a ESTADIO (SeRealizaEn) y a ADMINISTRADOR (DaDeAlta)
+-- =====================================================
+-- EVENTO: un partido en un estadio
+-- =====================================================
+-- Cada evento apunta al estadio donde se juega y al administrador que lo creó.
+-- Usamos DATETIME (no TIMESTAMP) para no pelearnos con zonas horarias.
+--
+-- RNE 4 (dos eventos no pueden solaparse en el mismo estadio): no se puede escribir
+-- como CHECK, así que la defiende el trigger tr_evento_sin_solapamiento (ver triggers.sql).
+-- El índice por estadio+fecha es para que ese chequeo sea rápido.
 CREATE TABLE IF NOT EXISTS EVENTO (
     EventoID          INT UNSIGNED   NOT NULL AUTO_INCREMENT,
     EquipoLocal       VARCHAR(100)   NOT NULL,
     EquipoVisitante   VARCHAR(100)   NOT NULL,
-    -- DATETIME en lugar de TIMESTAMP: evita conversiones de zona horaria en sistema internacional
     FechaHora         DATETIME       NOT NULL,
     EstadioID         INT UNSIGNED   NOT NULL,
     Mail_Administrador VARCHAR(254)  NOT NULL,
@@ -146,16 +164,19 @@ CREATE TABLE IF NOT EXISTS EVENTO (
     CONSTRAINT fk_evento_admin    FOREIGN KEY (Mail_Administrador)
         REFERENCES ADMINISTRADOR(Mail_Usuario)
         ON DELETE RESTRICT ON UPDATE CASCADE,
-    -- RNE 4 (no superposición de eventos en mismo estadio): no expresable como CHECK,
-    -- se implementa con trigger tr_evento_no_solapamiento (ver triggers.sql)
     INDEX idx_evento_estadio_fecha (EstadioID, FechaHora)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 
--- EVENTO_SECTOR: agregación de la relación N:N Habilita (EVENTO × SECTOR)
--- Necesaria porque ENTRADA y ASIGNACION_FUNCIONARIO referencian el par evento+sector como unidad.
--- Restricción implícita: EstadioID de EVENTO_SECTOR debe coincidir con el de EVENTO.
--- No expresable como FK simple → se valida en trigger tr_evento_sector_estadio_consistente.
+-- =====================================================
+-- EVENTO_SECTOR: qué sectores se habilitan para cada evento
+-- =====================================================
+-- Es la relación N:N entre EVENTO y SECTOR. La necesitamos como tabla propia porque
+-- ENTRADA y ASIGNACION_FUNCIONARIO apuntan al par evento+sector como una unidad.
+--
+-- Cuidado: el EstadioID de acá tiene que ser el mismo que el del EVENTO. Eso no se
+-- puede atar con una FK simple, así que lo defiende el trigger
+-- tr_evento_sector_estadio_insert (ver triggers.sql).
 CREATE TABLE IF NOT EXISTS EVENTO_SECTOR (
     EventoID     INT UNSIGNED          NOT NULL,
     EstadioID    INT UNSIGNED          NOT NULL,
@@ -173,31 +194,41 @@ CREATE TABLE IF NOT EXISTS EVENTO_SECTOR (
 
 -- -----------------------------------------------------------------------------
 -- MÓDULO 3: VENTAS Y ENTRADAS
--- Orden: COMISION → VENTA → ENTRADA → TRANSFERENCIA
+-- Orden de creación: COMISION → VENTA → ENTRADA → TRANSFERENCIA
 -- -----------------------------------------------------------------------------
 
--- COMISION: Corrección 3 del MER — entidad propia con vigencia temporal
+-- =====================================================
+-- COMISION: el porcentaje que se cobra, con vigencia en el tiempo
+-- =====================================================
+-- Es una entidad propia (Corrección 3 del MER) porque la comisión cambia con el tiempo.
+-- F_Hasta en NULL marca la comisión que está vigente hoy.
+--
+-- RNE 12 (no puede haber dos comisiones pisándose): no se puede como CHECK, la defiende
+-- el trigger tr_comision_sin_solapamiento (ver triggers.sql). El índice por vigencia
+-- ayuda a ese chequeo.
 CREATE TABLE IF NOT EXISTS COMISION (
     ComisionID  INT UNSIGNED   NOT NULL AUTO_INCREMENT,
-    -- RNE Porcentaje: valor numérico mayor a 0
     Porcentaje  DECIMAL(5,2)   NOT NULL,
     F_Desde     DATETIME       NOT NULL,
-    -- F_Hasta NULL indica comisión actualmente vigente (RNE 12)
     F_Hasta     DATETIME       NULL,
 
     CONSTRAINT pk_comision    PRIMARY KEY (ComisionID),
     CONSTRAINT chk_porcentaje CHECK (Porcentaje > 0.00),
-    -- RNE 12 (sin solapamiento de vigencias): no expresable como CHECK,
-    -- se implementa con trigger tr_comision_sin_solapamiento (ver triggers.sql)
     INDEX idx_comision_vigencia (F_Desde, F_Hasta)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 
--- VENTA: sin columna MontoTotal (atributo calculable, ver DEC-03 en decisiones.md)
+-- =====================================================
+-- VENTA: la compra que hace un usuario general
+-- =====================================================
+-- No guardamos el MontoTotal: es calculable, lo resuelve la vista
+-- v_monto_total_venta (DEC-03).
+--
+-- RNE 1 (máximo 5 entradas por venta): no se puede como CHECK acá, la defiende el
+-- trigger tr_entrada_limite_venta cuando se insertan las entradas (ver triggers.sql).
 CREATE TABLE IF NOT EXISTS VENTA (
     VentaID        INT UNSIGNED                          NOT NULL AUTO_INCREMENT,
     Fecha          DATETIME                              NOT NULL,
-    -- RNE Estado de VENTA: dominio fijo {Pendiente, Confirmada, Paga}
     Estado         ENUM('Pendiente', 'Confirmada', 'Paga') NOT NULL,
     Mail_Comprador VARCHAR(254)                          NOT NULL,
     ComisionID     INT UNSIGNED                          NOT NULL,
@@ -209,27 +240,27 @@ CREATE TABLE IF NOT EXISTS VENTA (
     CONSTRAINT fk_venta_comision  FOREIGN KEY (ComisionID)
         REFERENCES COMISION(ComisionID)
         ON DELETE RESTRICT ON UPDATE CASCADE,
-    -- RNE 1 (máx. 5 entradas por venta): no expresable como CHECK aquí,
-    -- se implementa con trigger tr_entrada_limite_por_venta (ver triggers.sql)
     INDEX idx_venta_comprador (Mail_Comprador),
     INDEX idx_venta_fecha (Fecha)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 
--- ENTRADA: entidad central del sistema
--- Reúne 3 FK (Genera→VENTA, CorrespondeA→EVENTO_SECTOR, Posee→USUARIO_GENERAL)
--- más el snapshot Costo_Historico (Ajuste 3 del MER final).
+-- =====================================================
+-- ENTRADA: el corazón del sistema
+-- =====================================================
+-- Junta tres relaciones: de qué VENTA salió, a qué EVENTO_SECTOR corresponde y quién
+-- es su propietario actual. Mail_Propietario puede cambiar tras una transferencia, por
+-- eso a veces no coincide con el comprador original.
+-- Costo_Historico es una foto del precio del sector al momento de comprar (Ajuste 3 del
+-- MER), así un cambio de precio futuro no altera las ventas viejas.
 CREATE TABLE IF NOT EXISTS ENTRADA (
     EntradaID       INT UNSIGNED                                           NOT NULL AUTO_INCREMENT,
-    -- RNE Estado de ENTRADA: dominio fijo {Activa, PendienteTransferencia, Consumida}
     EstadoEntrada   ENUM('Activa', 'PendienteTransferencia', 'Consumida') NOT NULL,
-    -- Ajuste 3 MER: snapshot del costo del sector al momento de la compra
     Costo_Historico DECIMAL(10,2)                                         NOT NULL,
     VentaID         INT UNSIGNED                                          NOT NULL,
     EventoID        INT UNSIGNED                                          NOT NULL,
     EstadioID       INT UNSIGNED                                          NOT NULL,
     LetraSector     ENUM('A','B','C','D')                                 NOT NULL,
-    -- Posee: propietario actual (puede diferir del comprador tras transferencias)
     Mail_Propietario VARCHAR(254)                                         NOT NULL,
 
     CONSTRAINT pk_entrada            PRIMARY KEY (EntradaID),
@@ -250,13 +281,17 @@ CREATE TABLE IF NOT EXISTS ENTRADA (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 
--- TRANSFERENCIA: log histórico de cambios de propietario
--- EsOrigen y EsDestino referencian USUARIO (no USUARIO_GENERAL) porque el MER
--- modela ambas relaciones desde la superclase USUARIO.
+-- =====================================================
+-- TRANSFERENCIA: el historial de cambios de dueño de una entrada
+-- =====================================================
+-- Origen y destino apuntan a USUARIO (la superclase), porque así lo modela el MER.
+--
+-- Dos reglas que se defienden con triggers al insertar (ver triggers.sql):
+--   RNE 2: una entrada no puede tener más de 3 transferencias → tr_transferencia_limite
+--   RNE 6: solo se transfieren entradas Activas               → tr_transferencia_entrada_activa
 CREATE TABLE IF NOT EXISTS TRANSFERENCIA (
     TransfID     INT UNSIGNED                              NOT NULL AUTO_INCREMENT,
     FechaSol     DATETIME                                  NOT NULL,
-    -- RNE Estado de TRANSFERENCIA: dominio fijo {Pendiente, Aceptada, Rechazada}
     Estado       ENUM('Pendiente', 'Aceptada', 'Rechazada') NOT NULL,
     EntradaID    INT UNSIGNED                              NOT NULL,
     Mail_Origen  VARCHAR(254)                              NOT NULL,
@@ -272,8 +307,6 @@ CREATE TABLE IF NOT EXISTS TRANSFERENCIA (
     CONSTRAINT fk_transf_destino      FOREIGN KEY (Mail_Destino)
         REFERENCES USUARIO(Mail)
         ON DELETE RESTRICT ON UPDATE CASCADE,
-    -- RNE 2 (máx. 3 transferencias por entrada): trigger tr_transferencia_limite
-    -- RNE 6 (solo entradas Activas): trigger tr_transferencia_estado_entrada
     INDEX idx_transf_entrada (EntradaID),
     INDEX idx_transf_origen  (Mail_Origen),
     INDEX idx_transf_destino (Mail_Destino)
@@ -282,21 +315,27 @@ CREATE TABLE IF NOT EXISTS TRANSFERENCIA (
 
 -- -----------------------------------------------------------------------------
 -- MÓDULO 4: SEGURIDAD Y VALIDACIÓN
--- Orden: TOKEN_QR → DISPOSITIVO → VALIDACION → ASIGNACION_FUNCIONARIO
+-- Orden de creación: TOKEN_QR → DISPOSITIVO → VALIDACION → ASIGNACION_FUNCIONARIO
 -- -----------------------------------------------------------------------------
 
--- TOKEN_QR: Entrada Dinámica (RNE 10). Cada entrada activa tiene un token vigente
--- que vence a los 30 segundos. Cuando el cliente lo solicita y ya venció, el backend
--- desactiva el anterior y genera uno nuevo (ver TokenService). Las filas anteriores
--- quedan como histórico (cadena de tokens). DEC-02: limpieza de tokens viejos = mejora futura.
+-- =====================================================
+-- TOKEN_QR: el QR dinámico de cada entrada (RNE 10)
+-- =====================================================
+-- Cada entrada activa tiene un token que vive 30 segundos (ExpiraEn = GeneradoEn + 30s).
+-- Cuando el cliente lo pide y ya venció, el backend apaga el viejo y genera uno nuevo
+-- (ver TokenService); los anteriores quedan como historial. La limpieza de tokens
+-- viejos quedó como mejora futura (DEC-02).
+--
+-- El CHECK chk_token_ventana defiende que ExpiraEn sea posterior a GeneradoEn.
+-- Que haya un solo token activo por entrada no se puede con un UNIQUE (MySQL no tiene
+-- índices parciales), así que lo defienden los triggers tr_token_unico_activo_insert
+-- y tr_token_unico_activo_update. El índice (EntradaID, Activo) hace rápido encontrar
+-- el token activo al validar (RNE 9).
 CREATE TABLE IF NOT EXISTS TOKEN_QR (
     TokenID     INT UNSIGNED   NOT NULL AUTO_INCREMENT,
     CodigoQR    VARCHAR(500)   NOT NULL,
     GeneradoEn  DATETIME       NOT NULL,
-    -- Ventana de validez de 30 segundos: ExpiraEn = GeneradoEn + 30s.
-    -- Un token vencido no puede validarse (RNE 10).
     ExpiraEn    DATETIME       NOT NULL,
-    -- RNE Activo: booleano; solo un token activo por entrada a la vez
     Activo      BOOLEAN        NOT NULL DEFAULT FALSE,
     EntradaID   INT UNSIGNED   NOT NULL,
 
@@ -306,16 +345,17 @@ CREATE TABLE IF NOT EXISTS TOKEN_QR (
     CONSTRAINT fk_token_entrada  FOREIGN KEY (EntradaID)
         REFERENCES ENTRADA(EntradaID)
         ON DELETE RESTRICT ON UPDATE CASCADE,
-    -- RNE Activo (un solo token activo por entrada): no expresable como UNIQUE parcial en MySQL,
-    -- se implementa con trigger tr_token_unico_activo (ver triggers.sql)
-    INDEX idx_token_entrada_activo (EntradaID, Activo)  -- crítico para RNE 9
+    INDEX idx_token_entrada_activo (EntradaID, Activo)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 
--- DISPOSITIVO: FK NOT NULL a FUNCIONARIO implementa RNE 11 (TieneAsig, Ajuste 2 MER)
+-- =====================================================
+-- DISPOSITIVO: el lector que usa el funcionario (RNE 11)
+-- =====================================================
+-- La FK Mail_Funcionario es NOT NULL: un dispositivo nunca queda suelto, siempre
+-- pertenece a un funcionario antes de poder usarse (RNE 11, Ajuste 2 del MER).
 CREATE TABLE IF NOT EXISTS DISPOSITIVO (
     DispositivoID    INT UNSIGNED   NOT NULL AUTO_INCREMENT,
-    -- RNE 11: todo dispositivo debe estar vinculado a un funcionario antes de usarse
     Mail_Funcionario VARCHAR(254)   NOT NULL,
 
     CONSTRAINT pk_dispositivo     PRIMARY KEY (DispositivoID),
@@ -326,8 +366,15 @@ CREATE TABLE IF NOT EXISTS DISPOSITIVO (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 
--- VALIDACION: relación ternaria Valida (Ajuste 1 MER)
--- PK = TokenID porque TOKEN_QR participa (0,1) en la ternaria → un token, a lo sumo una validación
+-- =====================================================
+-- VALIDACION: el escaneo del QR en la puerta (relación ternaria Valida)
+-- =====================================================
+-- Junta token + funcionario + dispositivo (Ajuste 1 del MER). La PK es solo TokenID
+-- porque un token se valida una sola vez: eso ya frena la doble validación.
+--
+-- Reglas que se defienden con triggers al insertar (ver triggers.sql):
+--   RNE 9: el token tiene que estar activo y vigente → tr_validacion_token_activo
+--   RNE 7: no se valida una entrada ya consumida     → tr_validacion_entrada_no_consumida
 CREATE TABLE IF NOT EXISTS VALIDACION (
     TokenID          INT UNSIGNED   NOT NULL,
     Mail_Funcionario VARCHAR(254)   NOT NULL,
@@ -344,16 +391,17 @@ CREATE TABLE IF NOT EXISTS VALIDACION (
     CONSTRAINT fk_val_dispositivo   FOREIGN KEY (DispositivoID)
         REFERENCES DISPOSITIVO(DispositivoID)
         ON DELETE RESTRICT ON UPDATE CASCADE,
-    -- RNE 7 (validación irreversible): trigger tr_validacion_irreversible
-    -- RNE 9 (token activo al validar): trigger tr_validacion_token_activo
     INDEX idx_val_funcionario  (Mail_Funcionario),
     INDEX idx_val_dispositivo  (DispositivoID),
     INDEX idx_val_fechahora    (FechaHora)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 
--- ASIGNACION_FUNCIONARIO: tabla intermedia de la relación N:N AsignadoA
--- (FUNCIONARIO × EVENTO_SECTOR)
+-- =====================================================
+-- ASIGNACION_FUNCIONARIO: qué funcionario cubre qué sector de qué evento
+-- =====================================================
+-- Es la relación N:N entre FUNCIONARIO y EVENTO_SECTOR. Es la base para controlar la
+-- cobertura (RNE 5, ver la vista v_cobertura_funcionario en triggers.sql).
 CREATE TABLE IF NOT EXISTS ASIGNACION_FUNCIONARIO (
     Mail_Funcionario  VARCHAR(254)          NOT NULL,
     EventoID          INT UNSIGNED          NOT NULL,
@@ -373,10 +421,11 @@ CREATE TABLE IF NOT EXISTS ASIGNACION_FUNCIONARIO (
 
 
 -- =============================================================================
--- VISTA: MontoTotal por venta
--- Calcula el monto total de una venta dinámicamente (ver Parte III §3.4 del informe).
--- Fórmula: SUM(Costo_Historico de las entradas) × (1 + Porcentaje/100)
+-- VISTA v_monto_total_venta: el total de cada venta calculado al vuelo
 -- =============================================================================
+-- No guardamos el monto en VENTA; lo calculamos acá sumando el Costo_Historico de las
+-- entradas y aplicándole la comisión: SUM(costo) * (1 + Porcentaje/100).
+-- (Ver Parte III §3.4 del informe.)
 
 CREATE OR REPLACE VIEW v_monto_total_venta AS
 SELECT

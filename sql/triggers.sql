@@ -1,29 +1,37 @@
---   Estructura de como implementeamos los RNE:
---   Módulo 1 — ENTRADA       (RNE 1, RNE 7)
---   Módulo 2 — TRANSFERENCIA (RNE 2, RNE 6 + máquina de estados de ENTRADA)
---   Módulo 3 — TOKEN_QR      (restricción: un solo token activo por entrada)
---   Módulo 4 — VALIDACION    (RNE 9, RNE 7 complemento + post-validación atómica)
---   Módulo 5 — EVENTO        (RNE 4)
---   Módulo 6 — COMISION      (RNE 12: guard + SP de alta)
---   Módulo 7 — RNE 5         (vista de cobertura + SP de verificación)
+-- =============================================================================
+-- triggers.sql — Dónde defendemos cada RNE desde la base
+-- =============================================================================
+-- Mapa rápido de lo que hay en este archivo:
+--   Módulo 1 — ENTRADA       → RNE 1 (límite por venta), aforo del sector, RNE 7 (consumida irreversible)
+--   Módulo 2 — TRANSFERENCIA → RNE 2 (límite de transferencias), RNE 6 (solo Activas) + máquina de estados
+--   Módulo 3 — TOKEN_QR      → un solo token activo por entrada
+--   Módulo 4 — VALIDACION    → RNE 9 y RNE 10 (token activo y vigente), RNE 7 (complemento), cierre atómico
+--   Módulo 5 — EVENTO        → RNE 4 (eventos sin solaparse) + admin solo en su país sede
+--   Módulo 6 — COMISION      → RNE 12 (guard) + SP de alta
+--   Módulo 7 — RNE 5         → cobertura por funcionario (vista + SP) y consistencia sector-estadio
 --
--- Nota (RNE 8 — entrada "al portador"): no se valida la identidad del propietario al escanear
---       el QR. Cualquier portador de un token vigente (activo y dentro de la ventana de 30s)
---       puede ingresar.
+-- RNE 8 (entrada "al portador"): a propósito NO validamos quién presenta el QR.
+--   Cualquiera que tenga un token vigente (activo y dentro de los 30s) puede entrar.
+--   No es un control que falte: es una decisión de diseño, por eso acá no hay trigger.
+-- =============================================================================
 
 USE CD_Grupo4;
--- ===================
+-- =====================================================
 -- MÓDULO 1: ENTRADA
--- ===================
+-- =====================================================
 
 DELIMITER //
-    
--- RNE 1: una venta no puede tener más de 5 entradas.
--- Disparador: BEFORE INSERT ON ENTRADA — cuenta las entradas existentes para esa VentaID.
--- Nota de concurrencia: dos transacciones concurrentes para la misma VentaID podrían
--- pasar ambas este check si leen antes de que la otra haga commit. La aplicación debe
--- envolver la creación de VENTA + ENTRADAs en una sola transacción con SELECT ... FOR UPDATE
--- sobre la fila de VENTA para serializar inserciones concurrentes del mismo comprador.
+
+-- =====================================================
+-- RNE 1 — máximo 5 entradas por venta
+-- =====================================================
+-- Acá controlamos que una venta no junte más de 5 entradas.
+-- Antes de insertar contamos cuántas ya tiene esa VentaID; si llega a 5, cortamos.
+--
+-- Ojo con la concurrencia: dos transacciones a la vez sobre la misma venta podrían pasar
+-- las dos este chequeo si leen antes de que la otra confirme. Por eso el backend crea la
+-- VENTA y sus ENTRADAs en una sola transacción con SELECT ... FOR UPDATE sobre la venta,
+-- así las inserciones del mismo comprador se serializan.
 CREATE TRIGGER tr_entrada_limite_venta
 BEFORE INSERT ON ENTRADA
 FOR EACH ROW
@@ -37,14 +45,19 @@ BEGIN
 END //
 
 
--- Control de aforo / sobre-aforo: la capacidad del sector es un límite duro — no se puede sobre-vender.
--- (No confundir con RNE 3 "un evento debe habilitar al menos un sector", que se garantiza en
---  backend — ver AdminService.crearEvento. En MySQL no se puede forzar con trigger al insertar
---  EVENTO porque EVENTO_SECTOR se inserta después y no hay constraints diferidas.)
--- Disparador: BEFORE INSERT ON ENTRADA — cuenta las entradas ya emitidas para el mismo
--- (EventoID, EstadioID, LetraSector) y las compara con SECTOR.CapacidadMax.
--- Defensa en profundidad: la aplicación además toma un lock pesimista sobre la fila de SECTOR
--- (ver VentaService) para serializar compras concurrentes del mismo sector y evitar la carrera.
+-- =====================================================
+-- Aforo del sector — no se puede sobrevender
+-- =====================================================
+-- Acá cuidamos que no se vendan más entradas que la capacidad del sector. Antes de
+-- insertar contamos las entradas ya emitidas para ese evento+sector y las comparamos
+-- contra SECTOR.CapacidadMax.
+--
+-- Esto NO es RNE 3. RNE 3 ("un evento debe habilitar al menos un sector") no vive en la
+-- base: lo resuelve el backend (AdminService.crearEvento), porque EVENTO_SECTOR se inserta
+-- después del EVENTO y MySQL no tiene constraints diferidas para chequearlo al vuelo.
+--
+-- Además del trigger, el backend toma un lock sobre la fila del SECTOR (VentaService) para
+-- serializar compras simultáneas del mismo sector. Defensa en dos capas.
 CREATE TRIGGER tr_entrada_capacidad
 BEFORE INSERT ON ENTRADA
 FOR EACH ROW
@@ -66,10 +79,12 @@ BEGIN
 END //
 
 
--- RNE 7: el estado Consumida es irreversible.
--- Disparador: BEFORE UPDATE ON ENTRADA — rechaza cualquier cambio que saque una entrada de Consumida.
--- También previene reactivar una entrada consumida a través de una transferencia posterior
--- (aunque RNE 6 ya lo bloquea antes de que llegue aquí).
+-- =====================================================
+-- RNE 7 — una entrada consumida no vuelve atrás
+-- =====================================================
+-- Esta parte evita que una entrada ya Consumida vuelva a un estado anterior.
+-- En cada UPDATE, si estaba Consumida y la quieren cambiar, lo rechazamos.
+-- También frena que una transferencia posterior la "reviva" (aunque RNE 6 ya corta antes).
 CREATE TRIGGER tr_entrada_consumida_irreversible
 BEFORE UPDATE ON ENTRADA
 FOR EACH ROW
@@ -83,17 +98,21 @@ END //
 
 DELIMITER ;
 
--- =============================================================================
+-- =====================================================
 -- MÓDULO 2: TRANSFERENCIA
--- Incluye la máquina de estados de ENTRADA: los AFTER triggers mantienen
--- EstadoEntrada y Mail_Propietario consistentes con el ciclo de transferencia.
--- =============================================================================
+-- =====================================================
+-- Acá están las dos reglas de transferencia y la máquina de estados de la ENTRADA: los
+-- triggers AFTER mantienen EstadoEntrada y Mail_Propietario al día con el ciclo de la
+-- transferencia.
 
 DELIMITER //
 
--- RNE 2: una entrada no puede tener más de 3 transferencias no rechazadas.
--- Disparador: BEFORE INSERT ON TRANSFERENCIA — cuenta transferencias Pendiente + Aceptada.
--- Se excluyen las Rechazadas para impedir gaming (crear y rechazar para resetear el contador).
+-- =====================================================
+-- RNE 2 — máximo 3 transferencias por entrada
+-- =====================================================
+-- Acá controlamos que una entrada no se transfiera más de 3 veces.
+-- Contamos las Pendiente + Aceptada; las Rechazadas no cuentan, así nadie hace trampa
+-- creando y rechazando transferencias para resetear el contador.
 CREATE TRIGGER tr_transferencia_limite
 BEFORE INSERT ON TRANSFERENCIA
 FOR EACH ROW
@@ -109,8 +128,11 @@ BEGIN
 END //
 
 
--- RNE 6: solo pueden transferirse entradas en estado Activa.
--- Disparador: BEFORE INSERT ON TRANSFERENCIA — rechaza si la entrada está PendienteTransferencia o Consumida.
+-- =====================================================
+-- RNE 6 — solo se transfieren entradas Activas
+-- =====================================================
+-- Esta parte evita transferir una entrada que esté PendienteTransferencia o Consumida.
+-- Si la entrada no está Activa, la transferencia se rechaza.
 CREATE TRIGGER tr_transferencia_entrada_activa
 BEFORE INSERT ON TRANSFERENCIA
 FOR EACH ROW
@@ -124,8 +146,11 @@ BEGIN
 END //
 
 
--- Máquina de estados (1/2): marca la ENTRADA como PendienteTransferencia al crear la solicitud.
--- Disparador: AFTER INSERT ON TRANSFERENCIA — el estado bloquea nuevas transferencias concurrentes (RNE 6).
+-- =====================================================
+-- Máquina de estados (1/2) — al pedir la transferencia
+-- =====================================================
+-- Apenas se crea la solicitud, dejamos la ENTRADA en PendienteTransferencia.
+-- Ese estado bloquea que entren otras transferencias en paralelo (apoya RNE 6).
 CREATE TRIGGER tr_transferencia_marcar_pendiente
 AFTER INSERT ON TRANSFERENCIA
 FOR EACH ROW
@@ -136,9 +161,12 @@ BEGIN
 END //
 
 
--- Máquina de estados (2/2): resuelve la transferencia actualizando propietario y/o estado de ENTRADA.
--- Disparador: AFTER UPDATE ON TRANSFERENCIA — si Pendiente→Aceptada cambia Mail_Propietario y restaura Activa;
--- si Pendiente→Rechazada solo restaura Activa. Solo actúa en la transición desde Pendiente.
+-- =====================================================
+-- Máquina de estados (2/2) — al resolver la transferencia
+-- =====================================================
+-- Si la transferencia pasa de Pendiente a Aceptada, cambiamos el dueño y la entrada
+-- vuelve a Activa. Si pasa a Rechazada, solo la volvemos a Activa.
+-- Solo actúa cuando venía de Pendiente.
 CREATE TRIGGER tr_transferencia_resolver
 AFTER UPDATE ON TRANSFERENCIA
 FOR EACH ROW
@@ -157,14 +185,19 @@ END //
 
 DELIMITER ;
 
--- =============================================================================
--- MÓDULO 3: TOKEN_QR
--- Garantiza que a lo sumo un token por entrada esté activo en cualquier momento.
--- MySQL no soporta índices parciales (WHERE Activo = TRUE), por lo que se usan triggers.
--- =============================================================================
+-- =====================================================
+-- MÓDULO 3: TOKEN_QR — un solo token activo por entrada
+-- =====================================================
+-- MySQL no nos deja hacer un UNIQUE solo para los tokens activos (no hay índices
+-- parciales). Por eso lo defendemos con triggers: una entrada no puede tener dos QR
+-- activos a la vez. Hay uno para el INSERT y otro para el UPDATE.
 
 DELIMITER //
 
+-- =====================================================
+-- Al insertar un token activo
+-- =====================================================
+-- Si el token nuevo entra como activo, primero miramos que la entrada no tenga ya otro activo.
 CREATE TRIGGER tr_token_unico_activo_insert
 BEFORE INSERT ON TOKEN_QR
 FOR EACH ROW
@@ -182,6 +215,11 @@ BEGIN
 END //
 
 
+-- =====================================================
+-- Al reactivar un token (UPDATE de FALSE a TRUE)
+-- =====================================================
+-- Mismo cuidado que arriba: si pasamos un token a activo, ningún otro de esa entrada
+-- puede estar activo en ese momento.
 CREATE TRIGGER tr_token_unico_activo_update
 BEFORE UPDATE ON TOKEN_QR
 FOR EACH ROW
@@ -203,24 +241,25 @@ END //
 
 DELIMITER ;
 
--- =============================================================================
--- MÓDULO 4: VALIDACION
--- RNE 9, RNE 7 (complemento) y post-validación atómica.
--- Nota de concurrencia: la PK de VALIDACION (TokenID) actúa como barrera natural
--- contra la doble validación concurrente — InnoDB garantiza que solo un INSERT
--- con el mismo TokenID puede tener éxito; el segundo falla con duplicate key.
--- =============================================================================
+-- =====================================================
+-- MÓDULO 4: VALIDACION — el escaneo en la puerta
+-- =====================================================
+-- Acá entran RNE 9 y RNE 10 (token activo y vigente), el complemento de RNE 7 y el cierre
+-- atómico de la entrada. La PK de VALIDACION (TokenID) es una barrera natural contra la
+-- doble validación: InnoDB deja pasar un solo INSERT con el mismo TokenID, el segundo
+-- falla por clave duplicada.
 
 DELIMITER //
 
--- RNE 9 + RNE 10: el token debe estar activo Y vigente (dentro de su ventana de 30s) al validar.
--- Disparador: BEFORE INSERT ON VALIDACION.
---   - RNE 9 : rechaza si TOKEN_QR.Activo != TRUE.
---   - RNE 10: rechaza si el token venció (ExpiraEn <= NOW()), aunque siga marcado como activo.
---     Un token puede quedar Activo=TRUE y vencido si nadie pidió su regeneración; este chequeo
---     es la defensa en profundidad del control de ventana que también hace el backend
---     (TokenService.estaVigente / ValidacionService). No interfiere con la regeneración: el
---     TokenService desactiva el viejo y emite uno nuevo con ExpiraEn = GeneradoEn + 30s.
+-- =====================================================
+-- RNE 9 y RNE 10 — el token tiene que estar activo y vigente
+-- =====================================================
+-- Acá controlamos las dos cosas al validar:
+--   RNE 9 : si el token no está Activo, lo rechazamos.
+--   RNE 10: si el token venció (ExpiraEn <= NOW()), lo rechazamos aunque siga marcado activo.
+-- Un token puede quedar activo pero vencido si nadie pidió regenerarlo; este chequeo es la
+-- red de seguridad de la ventana de 30s que también controla el backend (TokenService).
+-- No molesta a la regeneración: el TokenService apaga el viejo y emite uno nuevo con 30s más.
 CREATE TRIGGER tr_validacion_token_activo
 BEFORE INSERT ON VALIDACION
 FOR EACH ROW
@@ -239,9 +278,11 @@ BEGIN
 END //
 
 
--- RNE 7 (complemento, defensa en profundidad): bloquea validar una entrada ya Consumida.
--- Disparador: BEFORE INSERT ON VALIDACION — verifica EstadoEntrada del token a insertar.
--- La PK de VALIDACION (TokenID) ya evita la doble inserción; este trigger cubre inconsistencias de estado.
+-- =====================================================
+-- RNE 7 (complemento) — no validar una entrada ya consumida
+-- =====================================================
+-- Defensa extra: bloquea validar una entrada que ya está Consumida.
+-- La PK de VALIDACION ya evita la doble inserción; esto cubre estados inconsistentes.
 CREATE TRIGGER tr_validacion_entrada_no_consumida
 BEFORE INSERT ON VALIDACION
 FOR EACH ROW
@@ -258,9 +299,12 @@ BEGIN
 END //
 
 
--- Post-validación atómica: marca la ENTRADA como Consumida y desactiva todos sus TOKEN_QR.
--- Disparador: AFTER INSERT ON VALIDACION — garantiza que el marcado ocurre en la misma transacción
--- que el INSERT, sin necesidad de que el backend haga UPDATEs adicionales.
+-- =====================================================
+-- Cierre atómico de la validación
+-- =====================================================
+-- Apenas se registra la validación, marcamos la ENTRADA como Consumida y apagamos todos
+-- sus tokens. Pasa en la misma transacción que el INSERT, así el backend no tiene que
+-- hacer UPDATEs extra ni queda nada a medias.
 CREATE TRIGGER tr_validacion_post_insert
 AFTER INSERT ON VALIDACION
 FOR EACH ROW
@@ -274,16 +318,19 @@ END //
 
 DELIMITER ;
 
--- =============================================================================
--- MÓDULO 5: EVENTO
--- RNE 4: no pueden coexistir dos eventos en el mismo estadio con horarios solapados.
--- Supuesto: duración fija de 4 horas por evento (ver DEC-05 en docs/decisiones.md).
--- =============================================================================
+-- =====================================================
+-- MÓDULO 5: EVENTO — RNE 4 (eventos sin solaparse)
+-- =====================================================
+-- Dos eventos no pueden pisarse en el mismo estadio. Suponemos 4 horas de duración por
+-- evento (DEC-05). Hay control al crear y, más abajo, también al modificar.
 
 DELIMITER //
 
--- RNE 4: no pueden coexistir dos eventos en el mismo estadio con horarios solapados (ventana de 4 horas).
--- Disparador: BEFORE INSERT ON EVENTO — usa la condición de solapamiento de intervalos [A, A+4h) ∩ [B, B+4h).
+-- =====================================================
+-- RNE 4 — al crear un evento
+-- =====================================================
+-- Acá cuidamos que el evento nuevo no se solape con otro del mismo estadio.
+-- Dos franjas [A, A+4h) y [B, B+4h) se pisan si A < B+4h y B < A+4h.
 CREATE TRIGGER tr_evento_sin_solapamiento
 BEFORE INSERT ON EVENTO
 FOR EACH ROW
@@ -292,7 +339,6 @@ BEGIN
     SELECT COUNT(*) INTO v_count
     FROM EVENTO
     WHERE EstadioID = NEW.EstadioID
-      -- Dos intervalos [A, A+4h) y [B, B+4h) se solapan si A < B+4h AND B < A+4h
       AND NEW.FechaHora < DATE_ADD(FechaHora, INTERVAL 4 HOUR)
       AND FechaHora     < DATE_ADD(NEW.FechaHora, INTERVAL 4 HOUR);
     IF v_count > 0 THEN
@@ -304,32 +350,34 @@ END //
 
 DELIMITER ;
 
--- =============================================================================
+-- =====================================================
 -- MÓDULO 6: COMISION — RNE 12
--- Dos partes:
---   a) Trigger BEFORE INSERT: guard de solapamiento sobre INSERTs directos.
---   b) SP sp_nueva_comision: workflow correcto (cierra la anterior, abre la nueva).
+-- =====================================================
+-- La regla es que no haya dos comisiones vigentes a la vez. Lo resolvemos en dos partes:
+--   a) Trigger BEFORE INSERT: la red de seguridad contra cualquier INSERT que se solape.
+--   b) SP sp_nueva_comision: el camino correcto, que cierra la anterior y abre la nueva.
 --
--- MySQL no permite UPDATE sobre la misma tabla dentro de un trigger, por eso
--- el cierre automático de la comisión anterior vive en el SP, no en el trigger.
+-- El cierre automático de la anterior va en el SP y no en el trigger porque MySQL no deja
+-- hacer UPDATE sobre la misma tabla dentro de un trigger.
 --
--- Nota de concurrencia: sp_nueva_comision debe llamarse desde la aplicación dentro
--- de una transacción explícita (BEGIN / COMMIT) para evitar que dos llamadas
--- concurrentes inserten dos comisiones activas simultáneamente.
--- =============================================================================
+-- Concurrencia: sp_nueva_comision se llama dentro de una transacción explícita para que
+-- dos llamadas a la vez no terminen dejando dos comisiones activas.
 
 DELIMITER //
 
--- RNE 12 (guard): rechaza cualquier INSERT en COMISION que solape con una vigente o existente.
--- Disparador: BEFORE INSERT ON COMISION — cubre INSERTs directos Y llamadas al SP sp_nueva_comision.
--- El SP es el camino correcto para dar de alta una comisión; este trigger es la red de seguridad.
+-- =====================================================
+-- RNE 12 — comisión vigente sin pisarse
+-- =====================================================
+-- Acá cuidamos que no queden dos comisiones activas al mismo tiempo, ni que una nueva se
+-- solape con una ya cerrada. Vale tanto para INSERTs directos como para los que hace el SP.
+-- El SP es la forma correcta de dar de alta; este trigger es la red de seguridad.
 CREATE TRIGGER tr_comision_sin_solapamiento
 BEFORE INSERT ON COMISION
 FOR EACH ROW
 BEGIN
     DECLARE v_count INT;
 
-    -- Caso 1: ya existe una comisión activa (F_Hasta NULL) y se intenta insertar otra activa
+    -- Caso 1: ya hay una vigente (F_Hasta NULL) y quieren meter otra vigente
     IF NEW.F_Hasta IS NULL THEN
         SELECT COUNT(*) INTO v_count FROM COMISION WHERE F_Hasta IS NULL;
         IF v_count > 0 THEN
@@ -338,7 +386,7 @@ BEGIN
         END IF;
     END IF;
 
-    -- Caso 2: solapamiento con comisiones cerradas
+    -- Caso 2: la nueva se pisaría con una comisión ya cerrada
     SELECT COUNT(*) INTO v_count
     FROM COMISION
     WHERE F_Hasta IS NOT NULL
@@ -353,10 +401,12 @@ END //
 
 DELIMITER ;
 
--- SP: alta de nueva comisión.
--- Cierra la comisión vigente (si existe) y abre la nueva en una transacción atómica.
--- PENDIENTE-02 resuelto: el EXIT HANDLER hace ROLLBACK antes de resignalar,
--- garantizando que el UPDATE de cierre nunca quede aplicado sin el INSERT de la nueva.
+-- =====================================================
+-- SP sp_nueva_comision — alta correcta de una comisión
+-- =====================================================
+-- Cierra la comisión vigente (si hay) y abre la nueva, todo en una transacción.
+-- El EXIT HANDLER hace ROLLBACK y reenvía el error, así nunca queda el cierre aplicado sin
+-- la nueva comisión (PENDIENTE-02 resuelto).
 -- Uso: CALL sp_nueva_comision(5.00, '2026-06-15 00:00:00');
 DELIMITER //
 
@@ -378,9 +428,9 @@ BEGIN
     END IF;
 
     START TRANSACTION;
-        -- Cerrar comisión vigente fijando F_Hasta = inicio de la nueva
+        -- Cierra la vigente fijándole F_Hasta = inicio de la nueva
         UPDATE COMISION SET F_Hasta = p_desde WHERE F_Hasta IS NULL;
-        -- Insertar nueva comisión (el trigger tr_comision_sin_solapamiento valida el estado)
+        -- Abre la nueva (el trigger tr_comision_sin_solapamiento valida el estado)
         INSERT INTO COMISION (Porcentaje, F_Desde, F_Hasta)
         VALUES (p_porcentaje, p_desde, NULL);
     COMMIT;
@@ -389,14 +439,18 @@ END //
 DELIMITER ;
 
 
--- =============================================================================
--- MÓDULO 7: RNE 5 — Cobertura de sectores por funcionario
--- No puede implementarse como trigger (es una restricción sobre ausencia de registros).
--- Se implementa como vista de auditoría + SP de verificación. Ver DEC-07.
--- =============================================================================
+-- =====================================================
+-- MÓDULO 7: RNE 5 — cobertura de sectores por funcionario
+-- =====================================================
+-- Esto no se puede hacer con trigger: la regla es sobre algo que falta (un sector asignado
+-- que nadie validó), no sobre una fila que se inserta. Por eso lo armamos como vista de
+-- auditoría + SP de consulta (DEC-07).
 
--- Vista: estado de cobertura por funcionario/evento/sector.
--- Cubierto = 1 si el funcionario realizó al menos una validación en ese sector del evento.
+-- =====================================================
+-- Vista v_cobertura_funcionario — quién cubrió qué
+-- =====================================================
+-- Por cada sector asignado a un funcionario, Cubierto = 1 si hizo al menos una validación
+-- en ese sector del evento.
 CREATE OR REPLACE VIEW v_cobertura_funcionario AS
 SELECT
     af.Mail_Funcionario,
@@ -416,7 +470,10 @@ SELECT
 FROM ASIGNACION_FUNCIONARIO af;
 
 
--- SP: retorna los funcionarios que no cubrieron algún sector asignado en el evento.
+-- =====================================================
+-- SP sp_verificar_cobertura — sectores sin cubrir de un evento
+-- =====================================================
+-- Devuelve los funcionarios que tenían un sector asignado y todavía no validaron nada ahí.
 -- Uso: CALL sp_verificar_cobertura(1);
 DELIMITER //
 
@@ -434,10 +491,11 @@ END //
 
 DELIMITER ;
 
--- RNE: un administrador por país sede solo puede dar de alta eventos
--- en estadios pertenecientes a su jurisdicción geográfica.
--- Disparador: BEFORE INSERT ON EVENTO.
--- Verifica que PaisSede del administrador coincida con Pais del estadio del evento.
+-- =====================================================
+-- Un admin solo crea eventos en su país sede
+-- =====================================================
+-- Acá cuidamos que el administrador no dé de alta eventos en estadios de otro país:
+-- comparamos su PaisSede contra el Pais del estadio del evento.
 
 DELIMITER //
 
@@ -464,10 +522,11 @@ BEGIN
     END IF;
 END //
 
--- RNE: la misma regla debe cumplirse si se modifica el estadio
--- o el administrador de un evento ya creado.
--- Disparador: BEFORE UPDATE ON EVENTO.
-
+-- =====================================================
+-- Lo mismo al modificar un evento
+-- =====================================================
+-- Si cambian el estadio o el administrador de un evento ya creado, vuelve a chequear que
+-- el admin siga siendo del país del estadio.
 CREATE TRIGGER tr_evento_admin_pais_update
 BEFORE UPDATE ON EVENTO
 FOR EACH ROW
@@ -493,10 +552,16 @@ END //
 
 DELIMITER ;
 
--- RNE: los sectores habilitados para un evento deben pertenecer
--- al mismo estadio en el que se realiza dicho evento.
--- Disparador: BEFORE INSERT ON EVENTO_SECTOR.
--- Evita habilitar, por error, sectores de otro estadio.
+-- =====================================================
+-- RNE 3 (la parte que sí vive en la base) — sectores del mismo estadio
+-- =====================================================
+-- Acá cuidamos que los sectores que se habilitan para un evento sean del estadio donde se
+-- juega, y no de otro por error. Comparamos el EstadioID del sector contra el del evento.
+-- Hay versión para INSERT y para UPDATE.
+--
+-- Aclaración sobre RNE 3: la otra parte ("un evento debe habilitar al menos un sector") no
+-- está acá, se resuelve en backend (no se puede con trigger porque EVENTO_SECTOR se inserta
+-- después del EVENTO). En la base solo garantizamos la consistencia sector-estadio.
 
 DELIMITER //
 
@@ -517,10 +582,11 @@ BEGIN
     END IF;
 END //
 
--- RNE: la misma validación aplica si se modifica un sector habilitado
--- de un evento existente.
--- Disparador: BEFORE UPDATE ON EVENTO_SECTOR.
-
+-- =====================================================
+-- Lo mismo al modificar un sector habilitado
+-- =====================================================
+-- Si cambian un EVENTO_SECTOR ya existente, vuelve a chequear que el sector pertenezca al
+-- estadio del evento.
 CREATE TRIGGER tr_evento_sector_estadio_update
 BEFORE UPDATE ON EVENTO_SECTOR
 FOR EACH ROW
@@ -540,10 +606,12 @@ END //
 
 DELIMITER ;
 
--- RNE: no pueden existir eventos superpuestos en un mismo estadio.
--- Disparador: BEFORE UPDATE ON EVENTO.
--- Nota: ya existe control al insertar; este agrega el mismo control al modificar.
--- Supuesto: se considera una duración estimada de 4 horas por evento.
+-- =====================================================
+-- RNE 4 — también al modificar un evento
+-- =====================================================
+-- El control de solapamiento al insertar ya existe; este lo repite al modificar.
+-- Si cambian la fecha o el estadio de un evento, no puede quedar pisado con otro.
+-- Mismo supuesto: 4 horas de duración por evento.
 
 DELIMITER //
 
