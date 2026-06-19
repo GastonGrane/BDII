@@ -55,18 +55,40 @@ docker compose up --build
 
 Requiere Java 21, Node 20 y MariaDB/MySQL local.
 
+**Base de datos** (cualquier OS):
 ```bash
-# Base de datos
 mariadb -u root -p < sql/schema.sql
 mariadb -u root -p < sql/triggers.sql
 mariadb -u root -p < sql/seed.sql
+```
 
-# Backend
+**Backend — Linux/macOS:**
+```bash
 cd backend
 export DB_HOST=localhost DB_PORT=3306 DB_NAME=CD_Grupo4 DB_USER=root DB_PASSWORD=tu_password
 ./mvnw spring-boot:run
+```
 
-# Frontend
+**Backend — Windows (CMD):**
+```cmd
+cd backend
+set DB_HOST=localhost
+set DB_PORT=3306
+set DB_NAME=CD_Grupo4
+set DB_USER=root
+set DB_PASSWORD=tu_password
+mvnw.cmd spring-boot:run
+```
+
+**Backend — Windows (PowerShell):**
+```powershell
+cd backend
+$env:DB_HOST="localhost"; $env:DB_PORT="3306"; $env:DB_NAME="CD_Grupo4"; $env:DB_USER="root"; $env:DB_PASSWORD="tu_password"
+./mvnw.cmd spring-boot:run
+```
+
+**Frontend** (cualquier OS):
+```bash
 cd frontend
 npm install
 npm run dev   # http://localhost:3000
