@@ -93,3 +93,29 @@ cd frontend
 npm install
 npm run dev   # http://localhost:3000
 ```
+
+---
+
+## Probar los triggers y stored procedures
+
+El archivo `sql/test_triggers.sql` es una suite de pruebas que valida los 13 triggers
+y los 2 stored procedures contra los datos de `seed.sql`. Imprime una tabla con el
+resultado (`PASS`/`FAIL`) de cada caso y un resumen final, y limpia sus objetos
+temporales al terminar.
+
+> ⚠️ Requiere la base ya cargada con `schema.sql` + `triggers.sql` + `seed.sql`
+> (ver "Base de datos" más arriba). Conviene correrlo sobre datos recién cargados,
+> porque consume el seed (genera transferencias, validaciones, etc.).
+
+**Con Docker** (la base corre en el contenedor `db`, root password `root1234`):
+```bash
+docker compose exec -T db mariadb -u root -proot1234 CD_Grupo4 < sql/test_triggers.sql
+```
+
+**Local (MariaDB/MySQL):**
+```bash
+mariadb -u root -p < sql/test_triggers.sql
+```
+
+Para volver a un estado limpio antes de correrlo de nuevo, reseteá la BD
+(`docker compose down -v && docker compose up --build`, o recargá los `.sql` a mano).
