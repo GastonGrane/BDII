@@ -1,8 +1,4 @@
--- =============================================================================
--- Triggers, procedimientos y vistas de negocio — Sistema de Ticketing Mundial 2026
--- Ejecutar DESPUÉS de schema.sql.
---
--- Estructura:
+--   Estructura de como implementeamos los RNE:
 --   Módulo 1 — ENTRADA       (RNE 1, RNE 7)
 --   Módulo 2 — TRANSFERENCIA (RNE 2, RNE 6 + máquina de estados de ENTRADA)
 --   Módulo 3 — TOKEN_QR      (restricción: un solo token activo por entrada)
@@ -10,19 +6,14 @@
 --   Módulo 5 — EVENTO        (RNE 4)
 --   Módulo 6 — COMISION      (RNE 12: guard + SP de alta)
 --   Módulo 7 — RNE 5         (vista de cobertura + SP de verificación)
---
--- Nota: no se valida la identidad del propietario al escanear el QR (no existe tal
---       requisito en la letra). Cualquier portador de un token vigente puede ingresar.
--- =============================================================================
 
 USE CD_Grupo4;
-
--- =============================================================================
+-- ===================
 -- MÓDULO 1: ENTRADA
--- =============================================================================
+-- ===================
 
 DELIMITER //
-
+    
 -- RNE 1: una venta no puede tener más de 5 entradas.
 -- Disparador: BEFORE INSERT ON ENTRADA — cuenta las entradas existentes para esa VentaID.
 -- Nota de concurrencia: dos transacciones concurrentes para la misma VentaID podrían
@@ -156,7 +147,6 @@ BEGIN
         WHERE EntradaID = NEW.EntradaID;
     END IF;
 END //
-
 
 DELIMITER ;
 
@@ -344,7 +334,6 @@ END //
 
 
 DELIMITER ;
-
 
 -- SP: alta de nueva comisión.
 -- Cierra la comisión vigente (si existe) y abre la nueva en una transacción atómica.
