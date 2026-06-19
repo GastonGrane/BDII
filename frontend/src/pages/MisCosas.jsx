@@ -78,17 +78,45 @@ export default function MisCosas() {
 
   useEffect(() => { loadAll() }, [loadAll])
 
-  // Inicializa tokenData cuando cargan las entradas
+  // Sincroniza tokenData cuando cambian las entradas.
+  // Preserva el countdown local si el token no cambió para evitar saltos visuales.
+  // Elimina entradas que pasaron a Consumida/PendienteTransferencia.
   useEffect(() => {
-    const initial = {}
-    entradas.forEach(e => {
-      if (e.estadoEntrada === 'Activa' && e.codigoQR) {
-        initial[e.entradaId] = { codigoQR: e.codigoQR, expiraEn: e.tokenExpiraEn }
-      }
+    setTokenData(prev => {
+      const next = { ...prev }
+      const idsActivas = new Set()
+
+      entradas.forEach(e => {
+        if (e.estadoEntrada === 'Activa' && e.codigoQR) {
+          idsActivas.add(e.entradaId)
+          const yaExiste = prev[e.entradaId]
+          if (!yaExiste || yaExiste.codigoQR !== e.codigoQR) {
+            next[e.entradaId] = { codigoQR: e.codigoQR, expiraEn: e.tokenExpiraEn }
+          }
+        }
+      })
+
+      // Elimina entradas que ya no están activas (consumidas, en transferencia, etc.)
+      Object.keys(next).forEach(id => {
+        if (!idsActivas.has(Number(id))) delete next[Number(id)]
+      })
+
+      tokenDataRef.current = next
+      return next
     })
-    tokenDataRef.current = initial
-    setTokenData(initial)
   }, [entradas])
+
+  // Poll silencioso cada 5s: detecta consumos realizados por el funcionario
+  // y actualiza el estado de las entradas sin que el usuario recargue.
+  useEffect(() => {
+    if (tab !== 'entradas') return
+    const id = setInterval(() => {
+      api.misEntradas()
+        .then(nuevas => setEntradas(nuevas))
+        .catch(() => {})
+    }, 5000)
+    return () => clearInterval(id)
+  }, [tab])
 
   // Refresca tokens vencidos cada segundo y actualiza el countdown
   useEffect(() => {
