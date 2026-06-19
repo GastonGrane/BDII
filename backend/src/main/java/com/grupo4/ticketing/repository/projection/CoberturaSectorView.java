@@ -11,5 +11,7 @@ public interface CoberturaSectorView {
     LocalDateTime getFechaHora();
     Long getEstadioId();
     String getLetraSector();
-    Boolean getCubierto();
+    // La vista devuelve Cubierto como entero 0/1 (MariaDB no tiene boolean nativo),
+    // por eso se proyecta como Integer y se interpreta en el servicio.
+    Integer getCubierto();
 }

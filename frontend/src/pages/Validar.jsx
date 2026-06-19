@@ -157,7 +157,7 @@ export default function Validar() {
                     fontSize: '.85rem',
                   }}>
                     <strong>Sector {s.letraSector}</strong>
-                    <span className="text-muted">{s.cumplido ? '✅ cumplido' : '⏳ pendiente'}</span>
+                    <span className="text-muted">{s.cumplido ? 'cumplido' : 'pendiente'}</span>
                   </span>
                 ))}
               </div>

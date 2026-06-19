@@ -141,7 +141,7 @@ public class ValidacionService {
                         c.getFechaHora(),
                         c.getEstadioId(),
                         c.getLetraSector(),
-                        Boolean.TRUE.equals(c.getCubierto())))
+                        c.getCubierto() != null && c.getCubierto() == 1))
                 .toList();
     }
 }

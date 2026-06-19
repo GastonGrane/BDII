@@ -15,7 +15,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.List;
 
 @Service
@@ -42,11 +43,12 @@ public class EntradaService {
                     Evento ev = e.getEventoSector().getEvento();
 
                     String codigoQR = null;
-                    LocalDateTime expiraEn = null;
+                    Instant expiraEn = null;
                     if (e.getEstadoEntrada() == EstadoEntrada.Activa) {
                         TokenQr token = tokenService.tokenVigente(e);
                         codigoQR = token.getCodigoQR();
-                        expiraEn = token.getExpiraEn();
+                        // El token se guarda en hora UTC del servidor; lo exponemos como Instant.
+                        expiraEn = token.getExpiraEn().toInstant(ZoneOffset.UTC);
                     }
 
                     return new MisEntradasItemResponse(
@@ -83,8 +85,8 @@ public class EntradaService {
         return new TokenVigenteResponse(
                 entrada.getEntradaId(),
                 token.getCodigoQR(),
-                token.getGeneradoEn(),
-                token.getExpiraEn(),
+                token.getGeneradoEn().toInstant(ZoneOffset.UTC),
+                token.getExpiraEn().toInstant(ZoneOffset.UTC),
                 TokenService.VENTANA_SEGUNDOS
         );
     }
