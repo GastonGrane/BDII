@@ -106,8 +106,7 @@ export default function MisCosas() {
     })
   }, [entradas])
 
-  // Poll silencioso cada 5s: detecta consumos realizados por el funcionario
-  // y actualiza el estado de las entradas sin que el usuario recargue.
+  // Poll silencioso cada 5s: detecta consumos realizados por el funcionario.
   useEffect(() => {
     if (tab !== 'entradas') return
     const id = setInterval(() => {
@@ -117,6 +116,18 @@ export default function MisCosas() {
     }, 5000)
     return () => clearInterval(id)
   }, [tab])
+
+  // Poll silencioso de transferencias cada 5s, independiente del tab activo.
+  // Detecta transferencias nuevas recibidas y cambios de estado (aceptada/rechazada)
+  // sin que ninguno de los dos usuarios tenga que recargar la página.
+  useEffect(() => {
+    const id = setInterval(() => {
+      api.misTransferencias()
+        .then(nuevas => setTransferencias(nuevas))
+        .catch(() => {})
+    }, 5000)
+    return () => clearInterval(id)
+  }, [])
 
   // Refresca tokens vencidos cada segundo y actualiza el countdown
   useEffect(() => {

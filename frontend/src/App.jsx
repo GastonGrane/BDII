@@ -11,14 +11,16 @@ import AdminEventos  from './pages/AdminEventos'
 import AdminReportes from './pages/AdminReportes'
 
 function RequireAuth({ roles, children }) {
-  const { user } = useAuth()
+  const { user, loading } = useAuth()
+  if (loading) return null   // espera la verificación de sesión antes de redirigir
   if (!user) return <Navigate to="/login" replace />
   if (roles && !roles.includes(user.rol)) return <Navigate to="/" replace />
   return children
 }
 
 function RoleHome() {
-  const { user } = useAuth()
+  const { user, loading } = useAuth()
+  if (loading) return null
   if (!user) return <Navigate to="/login" replace />
   const homes = { USUARIO_GENERAL: '/eventos', FUNCIONARIO: '/validar', ADMINISTRADOR: '/admin/estadios' }
   return <Navigate to={homes[user.rol] ?? '/login'} replace />
