@@ -66,9 +66,4 @@ export const api = {
   rankingCompradores: ()        => api.get('/reportes/ranking-compradores'),
   cobertura: (eventoId)         => api.get(`/reportes/cobertura/${eventoId}`),
 
-  // Gestión (administrador): altas de funcionarios, administradores, dispositivos y asignaciones
-  crearFuncionario: (body)      => api.post('/gestion/funcionarios', body),
-  crearAdministrador: (body)    => api.post('/gestion/administradores', body),
-  crearDispositivo: (body)      => api.post('/gestion/dispositivos', body),
-  asignarFuncionario: (body)    => api.post('/gestion/asignaciones', body),
 }

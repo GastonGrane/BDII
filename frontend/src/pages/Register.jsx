@@ -6,7 +6,6 @@ const EMPTY = {
   mail: '', contrasena: '',
   paisDoc: 'Uruguay', tipoDoc: 'CI', nroDoc: '',
   paisDir: 'Uruguay', localidad: '', calle: '', nroPuerta: '', codPostal: '',
-  telefonos: '',
 }
 
 export default function Register() {
@@ -31,12 +30,7 @@ export default function Register() {
 
     setLoading(true)
     try {
-      // Teléfonos: campo de texto separado por comas → lista (atributo multivaluado)
-      const telefonos = form.telefonos
-        .split(',')
-        .map(t => t.trim())
-        .filter(Boolean)
-      await register({ ...form, telefonos })
+      await register(form)
       navigate('/eventos')
     } catch (err) {
       setError(err.message)
@@ -99,11 +93,6 @@ export default function Register() {
             {f('calle',    'Calle',   { placeholder: 'Av. 18 de Julio' })}
             {f('nroPuerta','Número',  { placeholder: '1234' })}
           </div>
-
-          {/* Contacto */}
-          <div className="form-section-title">Contacto</div>
-          {f('telefonos', 'Teléfonos (separados por coma)',
-            { placeholder: '+59899111111, +59899222222' })}
 
           <button
             type="submit"
