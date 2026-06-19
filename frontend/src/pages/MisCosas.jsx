@@ -163,6 +163,7 @@ export default function MisCosas() {
   /* ── crear transferencia ── */
   async function handleTransferir() {
     if (!mailDestino.trim()) { setTransfError('Ingresá el email del destinatario.'); return }
+    if (mailDestino.trim() === user.mail) { setTransfError('No podés transferirte una entrada a vos mismo.'); return }
     setTransfLoading(true); setTransfError('')
     try {
       await api.crearTransferencia({ entradaId: transfEntrada.entradaId, mailDestino: mailDestino.trim() })
