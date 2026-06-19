@@ -23,7 +23,7 @@ import java.util.Map;
 
 import static com.grupo4.ticketing.util.SessionUtils.extractDbMessage;
 
-// Gestión del flujo de compra: valida RNE 1 (máx. 5 entradas) y RNE 3 (aforo), crea
+// Gestión del flujo de compra: valida RNE 1 (máx. 5 entradas) y el control de aforo / sobre-aforo, crea
 // VENTA + ENTRADAs + TOKEN_QR en una sola transacción y calcula MontoTotal con comisión vigente (DEC-03).
 @Service
 public class VentaService {
@@ -113,19 +113,19 @@ public class VentaService {
                                 "El sector " + item.letraSector() + " no está habilitado "
                                 + "para el evento " + item.eventoId()));
 
-                // Lock pesimista del sector: serializa compras concurrentes del mismo sector (RNE 3)
+                // Lock pesimista del sector: serializa compras concurrentes del mismo sector (control de aforo)
                 SectorId sId = new SectorId(item.estadioId(), letra);
                 Sector sector = sectorRepo.findByIdForUpdate(sId)
                         .orElseThrow(() -> new IllegalArgumentException(
                                 "Sector " + item.letraSector() + " no encontrado en estadio " + item.estadioId()));
 
-                // RNE 3: control de aforo. emitidas (en BD) + ya reservadas en esta compra + pedido <= capacidad
+                // Control de aforo / sobre-aforo: emitidas (en BD) + ya reservadas en esta compra + pedido <= capacidad
                 long emitidas  = entradaRepo.contarPorEventoSector(item.eventoId(), item.estadioId(), letra);
                 int yaReservadas = reservadas.getOrDefault(esId, 0);
                 if (emitidas + yaReservadas + item.cantidad() > sector.getCapacidadMax()) {
                     long disponibles = sector.getCapacidadMax() - emitidas - yaReservadas;
                     throw new IllegalArgumentException(
-                            "RNE 3: capacidad insuficiente en el sector " + letra + " del evento " + item.eventoId()
+                            "Aforo: capacidad insuficiente en el sector " + letra + " del evento " + item.eventoId()
                             + " (disponibles: " + Math.max(disponibles, 0) + ", pedidas: " + item.cantidad() + ")");
                 }
                 reservadas.merge(esId, item.cantidad(), Integer::sum);
@@ -146,7 +146,7 @@ public class VentaService {
                 }
             }
         } catch (DataAccessException e) {
-            // Trigger (RNE 1 / RNE 3) rechazó el INSERT — propagar mensaje legible
+            // Trigger (RNE 1 / aforo) rechazó el INSERT — propagar mensaje legible
             throw new IllegalArgumentException(extractDbMessage(e));
         }
 

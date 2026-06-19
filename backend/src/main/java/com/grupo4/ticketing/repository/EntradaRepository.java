@@ -13,7 +13,7 @@ public interface EntradaRepository extends JpaRepository<Entrada, Long> {
     List<Entrada> findByVentaVentaId(Long ventaId);
     long countByVentaVentaId(Long ventaId);
 
-    // Entradas ya emitidas para un (evento, sector): base del control de aforo (RNE 3).
+    // Entradas ya emitidas para un (evento, sector): base del control de aforo / sobre-aforo.
     @Query("""
             SELECT COUNT(e) FROM Entrada e
             WHERE e.eventoSector.id.eventoId = :eventoId

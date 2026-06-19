@@ -25,6 +25,7 @@
 --   T15  RNE 3  — habilitar en un evento un sector de otro estadio rechazado
 --   T16  RNE 5  — cobertura por funcionario: A cubierto, B pendiente, luego B cubierto
 --   T17  RNE 5  — validación en evento no asignado no cuenta para la cobertura
+--   T18  RNE 10 — validar con token activo pero vencido (ExpiraEn <= NOW()) rechazado
 -- =============================================================================
 
 USE CD_Grupo4;
@@ -47,6 +48,18 @@ BEGIN
     DECLARE v_activo TINYINT;
     DECLARE v_count  INT;
     DECLARE v_id     INT;
+
+    -- =========================================================================
+    -- Setup RNE 10: los tokens del seed nacen vencidos (ExpiraEn en el pasado). En producción,
+    -- al abrir "Mis entradas" el TokenService regenera un token vigente antes de mostrar el QR.
+    -- Acá simulamos esa regeneración renovando la ventana de los tokens que las pruebas de
+    -- validación consumen (2, 5, 6, 9), para que el trigger reforzado (ExpiraEn > NOW()) los acepte.
+    -- El token 7 se deja vencido a propósito: lo usa T18 para verificar el rechazo por RNE 10.
+    -- =========================================================================
+    -- (Ventana amplia para que no expire mientras corre la suite; aquí solo importa que esté vigente.)
+    UPDATE TOKEN_QR
+    SET GeneradoEn = NOW(), ExpiraEn = DATE_ADD(NOW(), INTERVAL 1 HOUR)
+    WHERE TokenID IN (2, 5, 6, 9);
 
     -- =========================================================================
     -- T01 — RNE 1: la 6ta entrada en VENTA 1 debe ser rechazada
@@ -395,6 +408,27 @@ BEGIN
         'T17 RNE5: validación en evento no asignado no cuenta para la cobertura',
         IF(v_count = 0, 'PASS', 'FAIL'),
         CONCAT('Filas de cobertura de func@ en evento 2 (no asignado): ', v_count)
+    );
+
+    -- =========================================================================
+    -- T18 — RNE 10: validar con un TOKEN_QR activo pero VENCIDO debe rechazarse.
+    --        El token 7 (ENTRADA 7, Activa) sigue Activo=TRUE pero su ExpiraEn está en el
+    --        pasado (seed) y no se renovó. El trigger tr_validacion_token_activo debe rechazarlo
+    --        por ventana vencida, no por inactividad (eso lo cubre T09 / RNE 9).
+    -- =========================================================================
+    SET v_msg = NULL;
+    BEGIN
+        DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
+            GET DIAGNOSTICS CONDITION 1 v_msg = MESSAGE_TEXT;
+        INSERT INTO VALIDACION (TokenID, Mail_Funcionario, DispositivoID, FechaHora)
+        VALUES (7, 'func@ticketing.com', 1, '2026-06-20 18:55:00');
+    END;
+    SELECT EstadoEntrada INTO v_estado FROM ENTRADA WHERE EntradaID = 7;
+    INSERT INTO _test_resultados (prueba, resultado, detalle) VALUES (
+        'T18 RNE10: validar con token activo pero vencido rechazado',
+        IF(v_msg LIKE '%RNE 10%' AND v_estado = 'Activa', 'PASS', 'FAIL'),
+        CONCAT('Estado ENTRADA 7: ', IFNULL(v_estado, '?'),
+               IFNULL(CONCAT(' | Error: ', v_msg), ' | Sin error — INSERT debía fallar'))
     );
 
 END //

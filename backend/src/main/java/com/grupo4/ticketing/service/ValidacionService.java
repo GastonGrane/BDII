@@ -29,7 +29,8 @@ import static com.grupo4.ticketing.util.SessionUtils.extractDbMessage;
 // funcionario (RNE 11), que el funcionario esté asignado al sector de la entrada (RNE 5) y que
 // la entrada no esté consumida (RNE 7 — defensa en profundidad).
 // El trigger tr_validacion_post_insert completa el marcado de ENTRADA como Consumida.
-// No se verifica la identidad del propietario: basta con presentar un token QR vigente.
+// RNE 8 (entrada "al portador"): no se verifica la identidad del propietario;
+// basta con presentar un token QR vigente.
 @Service
 public class ValidacionService {
 

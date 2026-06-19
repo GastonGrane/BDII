@@ -15,7 +15,7 @@ public interface SectorRepository extends JpaRepository<Sector, SectorId> {
     List<Sector> findByIdEstadioId(Long estadioId);
 
     // Lock pesimista sobre la fila del sector: serializa compras concurrentes del mismo
-    // sector para que el control de aforo (RNE 3) no sufra condición de carrera.
+    // sector para que el control de aforo / sobre-aforo no sufra condición de carrera.
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT s FROM Sector s WHERE s.id = :id")
     Optional<Sector> findByIdForUpdate(@Param("id") SectorId id);

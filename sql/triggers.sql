@@ -6,6 +6,10 @@
 --   Módulo 5 — EVENTO        (RNE 4)
 --   Módulo 6 — COMISION      (RNE 12: guard + SP de alta)
 --   Módulo 7 — RNE 5         (vista de cobertura + SP de verificación)
+--
+-- Nota (RNE 8 — entrada "al portador"): no se valida la identidad del propietario al escanear
+--       el QR. Cualquier portador de un token vigente (activo y dentro de la ventana de 30s)
+--       puede ingresar.
 
 USE CD_Grupo4;
 -- ===================
@@ -33,7 +37,10 @@ BEGIN
 END //
 
 
--- RNE 3: la capacidad del sector es un límite duro — no se puede sobre-vender (sobre-aforo).
+-- Control de aforo / sobre-aforo: la capacidad del sector es un límite duro — no se puede sobre-vender.
+-- (No confundir con RNE 3 "un evento debe habilitar al menos un sector", que se garantiza en
+--  backend — ver AdminService.crearEvento. En MySQL no se puede forzar con trigger al insertar
+--  EVENTO porque EVENTO_SECTOR se inserta después y no hay constraints diferidas.)
 -- Disparador: BEFORE INSERT ON ENTRADA — cuenta las entradas ya emitidas para el mismo
 -- (EventoID, EstadioID, LetraSector) y las compara con SECTOR.CapacidadMax.
 -- Defensa en profundidad: la aplicación además toma un lock pesimista sobre la fila de SECTOR
@@ -54,7 +61,7 @@ BEGIN
     WHERE EstadioID = NEW.EstadioID AND LetraSector = NEW.LetraSector;
     IF v_emitidas >= v_capacidad THEN
         SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'RNE 3: capacidad del sector agotada para el evento (sobre-aforo)';
+            SET MESSAGE_TEXT = 'Aforo: capacidad del sector agotada para el evento (sobre-aforo)';
     END IF;
 END //
 
@@ -206,17 +213,28 @@ DELIMITER ;
 
 DELIMITER //
 
--- RNE 9: el token debe estar activo al momento de validar.
--- Disparador: BEFORE INSERT ON VALIDACION — rechaza si TOKEN_QR.Activo != TRUE.
+-- RNE 9 + RNE 10: el token debe estar activo Y vigente (dentro de su ventana de 30s) al validar.
+-- Disparador: BEFORE INSERT ON VALIDACION.
+--   - RNE 9 : rechaza si TOKEN_QR.Activo != TRUE.
+--   - RNE 10: rechaza si el token venció (ExpiraEn <= NOW()), aunque siga marcado como activo.
+--     Un token puede quedar Activo=TRUE y vencido si nadie pidió su regeneración; este chequeo
+--     es la defensa en profundidad del control de ventana que también hace el backend
+--     (TokenService.estaVigente / ValidacionService). No interfiere con la regeneración: el
+--     TokenService desactiva el viejo y emite uno nuevo con ExpiraEn = GeneradoEn + 30s.
 CREATE TRIGGER tr_validacion_token_activo
 BEFORE INSERT ON VALIDACION
 FOR EACH ROW
 BEGIN
     DECLARE v_activo BOOLEAN;
-    SELECT Activo INTO v_activo FROM TOKEN_QR WHERE TokenID = NEW.TokenID;
+    DECLARE v_expira DATETIME;
+    SELECT Activo, ExpiraEn INTO v_activo, v_expira FROM TOKEN_QR WHERE TokenID = NEW.TokenID;
     IF v_activo != TRUE THEN
         SIGNAL SQLSTATE '45000'
             SET MESSAGE_TEXT = 'RNE 9: el token QR no está activo al momento de la validación';
+    END IF;
+    IF v_expira <= NOW() THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'RNE 10: el token QR está vencido (ventana de 30 segundos)';
     END IF;
 END //
 
