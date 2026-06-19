@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import static com.grupo4.ticketing.util.SessionUtils.extractDbMessage;
@@ -57,14 +58,18 @@ public class AdminService {
     }
 
     // ── POST /api/estadios ────────────────────────────────────────────────────
+    // RNE 3 (sectores habilitados por evento, parte 1): un estadio debe tener sectores cargados.
+    // Para que nunca exista un estadio "vacío" inutilizable, el alta exige al menos un sector.
     @Transactional
-    public EstadioResponse crearEstadio(String mailAdmin, EstadioRequest req) {
+    public EstadioDetalleResponse crearEstadio(String mailAdmin, EstadioRequest req) {
         if (req.nombre() == null || req.nombre().isBlank())
             throw new IllegalArgumentException("El nombre del estadio es requerido");
         if (req.pais() == null || req.pais().isBlank())
             throw new IllegalArgumentException("El país del estadio es requerido");
         if (req.ciudad() == null || req.ciudad().isBlank())
             throw new IllegalArgumentException("La ciudad del estadio es requerida");
+        if (req.sectores() == null || req.sectores().isEmpty())
+            throw new IllegalArgumentException("RNE 3: el estadio debe tener al menos un sector");
 
         // El estadio debe pertenecer a la jurisdicción del administrador
         verificarJurisdiccion(mailAdmin, req.pais());
@@ -75,7 +80,12 @@ public class AdminService {
         e.setCiudad(req.ciudad());
         e = estadioRepo.save(e);
 
-        return new EstadioResponse(e.getEstadioId(), e.getNombre(), e.getPais(), e.getCiudad());
+        List<SectorListItem> sectores = new ArrayList<>();
+        for (SectorRequest s : req.sectores()) {
+            sectores.add(persistirSector(e, s));
+        }
+
+        return new EstadioDetalleResponse(e.getEstadioId(), e.getNombre(), e.getPais(), e.getCiudad(), sectores);
     }
 
     // ── POST /api/estadios/{id}/sectores ──────────────────────────────────────
@@ -89,6 +99,12 @@ public class AdminService {
         // El estadio debe estar en la jurisdicción del administrador
         verificarJurisdiccion(mailAdmin, estadio.getPais());
 
+        return persistirSector(estadio, req);
+    }
+
+    // Valida y persiste un sector dentro de un estadio. Compartido por el alta de estadio
+    // (RNE 3) y el alta de sector individual. Rechaza letras repetidas en el mismo estadio.
+    private SectorListItem persistirSector(Estadio estadio, SectorRequest req) {
         if (req.capacidadMax() == null || req.capacidadMax() < 1)
             throw new IllegalArgumentException("CapacidadMax debe ser mayor a 0");
         if (req.costoEntrada() == null || req.costoEntrada().signum() <= 0)
@@ -96,10 +112,10 @@ public class AdminService {
 
         LetraSector letra = parseSector(req.letraSector());
 
-        SectorId sId = new SectorId(estadioId, letra);
+        SectorId sId = new SectorId(estadio.getEstadioId(), letra);
         if (sectorRepo.existsById(sId))
             throw new IllegalArgumentException(
-                    "El sector " + letra + " ya existe en el estadio " + estadioId);
+                    "El sector " + letra + " ya existe en el estadio " + estadio.getEstadioId());
 
         Sector s = new Sector();
         s.setId(sId);

@@ -51,4 +51,15 @@ public class ReporteController {
         }
         return ResponseEntity.ok(reporteService.coberturaPendiente(eventoId));
     }
+
+    // GET /api/reportes/cobertura/{eventoId}/estado — ¿el evento cumple RNE 5? (cumple + pendientes)
+    @GetMapping("/cobertura/{eventoId}/estado")
+    public ResponseEntity<?> coberturaEstado(@PathVariable Long eventoId, HttpSession session) {
+        try {
+            SessionUtils.requireRol(session, "ADMINISTRADOR");
+        } catch (ResponseStatusException e) {
+            return ResponseEntity.status(e.getStatusCode()).body(new ErrorResponse(e.getReason()));
+        }
+        return ResponseEntity.ok(reporteService.verificarCobertura(eventoId));
+    }
 }

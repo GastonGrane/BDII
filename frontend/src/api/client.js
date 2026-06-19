@@ -60,10 +60,12 @@ export const api = {
 
   // Validaciones
   validar: (body)               => api.post('/validaciones', body),
+  coberturaFuncionario: ()      => api.get('/validaciones/cobertura'),
 
   // Reportes (administrador)
   eventosMasVendidos: ()        => api.get('/reportes/eventos-mas-vendidos'),
   rankingCompradores: ()        => api.get('/reportes/ranking-compradores'),
   cobertura: (eventoId)         => api.get(`/reportes/cobertura/${eventoId}`),
+  coberturaEstado: (eventoId)   => api.get(`/reportes/cobertura/${eventoId}/estado`),
 
 }

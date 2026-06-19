@@ -22,6 +22,9 @@
 --   T12  RNE 12 — INSERT directo en COMISION con vigente activa rechazado
 --   T13  RNE 12 — sp_nueva_comision cierra anterior y abre nueva (con transacción)
 --   T14  PEN-01 — aceptar transferencia de entrada ya consumida rechazado
+--   T15  RNE 3  — habilitar en un evento un sector de otro estadio rechazado
+--   T16  RNE 5  — cobertura por funcionario: A cubierto, B pendiente, luego B cubierto
+--   T17  RNE 5  — validación en evento no asignado no cuenta para la cobertura
 -- =============================================================================
 
 USE CD_Grupo4;
@@ -316,6 +319,82 @@ BEGIN
         'T14 PENDIENTE-01: aceptar transfer de ENTRADA Consumida rechazado',
         IF(v_msg LIKE '%RNE 7%' AND v_estado = 'Consumida', 'PASS', 'FAIL'),
         CONCAT('Estado ENTRADA 5: ', IFNULL(v_estado, '?'), IFNULL(CONCAT(' | Error: ', v_msg), ' | Sin error — debía fallar'))
+    );
+
+    -- =========================================================================
+    -- T15 — RNE 3: habilitar en un evento un sector que no pertenece a su estadio
+    --        debe rechazarse (trigger tr_evento_sector_estadio_insert).
+    --        El evento 1 está en el estadio 1; intentamos habilitar un sector del estadio 999.
+    -- =========================================================================
+    SET v_msg = NULL;
+    BEGIN
+        DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
+            GET DIAGNOSTICS CONDITION 1 v_msg = MESSAGE_TEXT;
+        INSERT INTO EVENTO_SECTOR (EventoID, EstadioID, LetraSector)
+        VALUES (1, 999, 'C');
+    END;
+    INSERT INTO _test_resultados (prueba, resultado, detalle) VALUES (
+        'T15 RNE3: sector de otro estadio habilitado en evento rechazado',
+        IF(v_msg LIKE '%no pertenece%', 'PASS', 'FAIL'),
+        COALESCE(v_msg, 'Sin error — INSERT debía fallar')
+    );
+
+    -- =========================================================================
+    -- T16 — RNE 5: cobertura de sectores por funcionario.
+    --        func@ está asignado a los sectores A y B del evento 1 (seed) y hasta aquí
+    --        solo validó entradas del sector A (T06 y T14) → A cubierto, B pendiente.
+    -- =========================================================================
+    -- T16a: el sector A figura cubierto
+    SET v_activo = NULL;
+    SELECT Cubierto INTO v_activo
+    FROM v_cobertura_funcionario
+    WHERE Mail_Funcionario = 'func@ticketing.com' AND EventoID = 1 AND LetraSector = 'A';
+    INSERT INTO _test_resultados (prueba, resultado, detalle) VALUES (
+        'T16a RNE5: sector A del funcionario figura CUBIERTO',
+        IF(v_activo = 1, 'PASS', 'FAIL'),
+        CONCAT('Cubierto(A) = ', IFNULL(v_activo, 'NULL'))
+    );
+
+    -- T16b: el sector B figura pendiente
+    SET v_activo = NULL;
+    SELECT Cubierto INTO v_activo
+    FROM v_cobertura_funcionario
+    WHERE Mail_Funcionario = 'func@ticketing.com' AND EventoID = 1 AND LetraSector = 'B';
+    INSERT INTO _test_resultados (prueba, resultado, detalle) VALUES (
+        'T16b RNE5: sector B del funcionario figura PENDIENTE',
+        IF(v_activo = 0, 'PASS', 'FAIL'),
+        CONCAT('Cubierto(B) = ', IFNULL(v_activo, 'NULL'))
+    );
+
+    -- T16c: al validar una entrada del sector B (TOKEN 6 → ENTRADA 6), B queda cubierto
+    --        y el evento 1 ya no tiene sectores pendientes para func@.
+    INSERT INTO VALIDACION (TokenID, Mail_Funcionario, DispositivoID, FechaHora)
+    VALUES (6, 'func@ticketing.com', 1, '2026-06-20 18:50:00');
+
+    SELECT COUNT(*) INTO v_count
+    FROM v_cobertura_funcionario
+    WHERE Mail_Funcionario = 'func@ticketing.com' AND EventoID = 1 AND Cubierto = FALSE;
+    INSERT INTO _test_resultados (prueba, resultado, detalle) VALUES (
+        'T16c RNE5: tras validar el sector B no quedan sectores pendientes (evento 1)',
+        IF(v_count = 0, 'PASS', 'FAIL'),
+        CONCAT('Sectores pendientes de func@ en evento 1: ', v_count)
+    );
+
+    -- =========================================================================
+    -- T17 — RNE 5: una validación en un evento donde el funcionario NO está asignado
+    --        no cuenta para su cobertura (no aparece en la vista). func@ no tiene
+    --        sectores asignados en el evento 2.
+    -- =========================================================================
+    INSERT INTO VALIDACION (TokenID, Mail_Funcionario, DispositivoID, FechaHora)
+    VALUES (9, 'func@ticketing.com', 1, '2026-06-25 18:50:00');
+
+    SELECT COUNT(*) INTO v_count
+    FROM v_cobertura_funcionario
+    WHERE Mail_Funcionario = 'func@ticketing.com' AND EventoID = 2;
+    INSERT INTO _test_resultados (prueba, resultado, detalle) VALUES (
+        'T17 RNE5: validación en evento no asignado no cuenta para la cobertura',
+        IF(v_count = 0, 'PASS', 'FAIL'),
+        CONCAT('Filas de cobertura de func@ en evento 2 (no asignado): ', v_count)
     );
 
 END //

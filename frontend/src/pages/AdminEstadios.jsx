@@ -10,8 +10,9 @@ export default function AdminEstadios() {
   const [loading,       setLoading]       = useState(true)
   const [loadError,     setLoadError]     = useState('')
 
-  // Form nuevo estadio
+  // Form nuevo estadio. RNE 3: el alta exige al menos un sector, por eso arranca con una fila.
   const [eForm,         setEForm]         = useState({ nombre: '', pais: '', ciudad: '' })
+  const [eSectores,     setESectores]     = useState([{ ...SECTOR_EMPTY }])
   const [eError,        setEError]        = useState('')
   const [eSubmitting,   setESubmitting]   = useState(false)
 
@@ -33,15 +34,45 @@ export default function AdminEstadios() {
       .finally(() => setLoading(false))
   }, [])
 
+  /* ── Sectores del nuevo estadio (RNE 3) ── */
+  // Letras ya elegidas en otras filas, para no permitir repetir un sector en el mismo estadio.
+  function letrasTomadasEnAlta(exceptoIdx) {
+    return eSectores.filter((_, i) => i !== exceptoIdx).map(s => s.letraSector).filter(Boolean)
+  }
+  function setNuevoSectorField(idx, field, value) {
+    setESectores(prev => prev.map((s, i) => (i === idx ? { ...s, [field]: value } : s)))
+    setEError('')
+  }
+  function agregarFilaSector() {
+    if (eSectores.length >= LETRAS.length) return
+    setESectores(prev => [...prev, { ...SECTOR_EMPTY }])
+  }
+  function quitarFilaSector(idx) {
+    setESectores(prev => (prev.length === 1 ? prev : prev.filter((_, i) => i !== idx)))
+  }
+
   /* ── Crear estadio ── */
   async function handleCrearEstadio(ev) {
     ev.preventDefault()
+    const sectores = eSectores.filter(s => s.letraSector && s.capacidadMax && s.costoEntrada)
+    if (sectores.length === 0) {
+      setEError('RNE 3: agregá al menos un sector con letra, capacidad y costo.')
+      return
+    }
     setEError(''); setESubmitting(true)
     try {
-      const nuevo = await api.crearEstadio(eForm)
-      setEstadios(prev => [...prev, { ...nuevo, sectores: [] }])
+      const nuevo = await api.crearEstadio({
+        ...eForm,
+        sectores: sectores.map(s => ({
+          letraSector:  s.letraSector,
+          capacidadMax: Number(s.capacidadMax),
+          costoEntrada: Number(s.costoEntrada),
+        })),
+      })
+      setEstadios(prev => [...prev, nuevo])
       setSectorForms(prev => ({ ...prev, [nuevo.estadioId]: { ...SECTOR_EMPTY } }))
       setEForm({ nombre: '', pais: '', ciudad: '' })
+      setESectores([{ ...SECTOR_EMPTY }])
     } catch (err) {
       setEError(err.message)
     } finally {
@@ -95,7 +126,7 @@ export default function AdminEstadios() {
         <h2 style={{ marginBottom: 14 }}>Nuevo estadio</h2>
         {eError && <div className="alert alert-error">{eError}</div>}
         <form onSubmit={handleCrearEstadio}>
-          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr auto', gap: 12, alignItems: 'end' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 12, alignItems: 'end' }}>
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label htmlFor="e-nombre">Nombre</label>
               <input id="e-nombre" type="text" placeholder="Estadio Monumental"
@@ -117,10 +148,60 @@ export default function AdminEstadios() {
                 onChange={e => setEForm(f => ({ ...f, ciudad: e.target.value }))}
                 disabled={eSubmitting} required />
             </div>
+          </div>
+
+          {/* Sectores del estadio (RNE 3: al menos uno) */}
+          <div className="form-section-title" style={{ marginTop: 18 }}>
+            Sectores <span className="text-muted text-sm">(al menos uno — RNE 3)</span>
+          </div>
+          {eSectores.map((s, idx) => {
+            const tomadas    = letrasTomadasEnAlta(idx)
+            const opciones   = LETRAS.filter(l => !tomadas.includes(l))
+            return (
+              <div key={idx} style={{ display: 'grid', gridTemplateColumns: '130px 1fr 1fr auto', gap: 12, alignItems: 'end', marginBottom: 10 }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label>Sector</label>
+                  <select value={s.letraSector}
+                    onChange={e => setNuevoSectorField(idx, 'letraSector', e.target.value)}
+                    disabled={eSubmitting}>
+                    <option value="">—</option>
+                    {opciones.map(l => (<option key={l} value={l}>Sector {l}</option>))}
+                  </select>
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label>Capacidad máx.</label>
+                  <input type="number" placeholder="5000"
+                    value={s.capacidadMax}
+                    onChange={e => setNuevoSectorField(idx, 'capacidadMax', e.target.value)}
+                    disabled={eSubmitting} min={1} />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label>Costo (UYU)</label>
+                  <input type="number" placeholder="2500"
+                    value={s.costoEntrada}
+                    onChange={e => setNuevoSectorField(idx, 'costoEntrada', e.target.value)}
+                    disabled={eSubmitting} min={1} step="0.01" />
+                </div>
+                <button type="button" className="btn btn-secondary" style={{ height: 42 }}
+                  onClick={() => quitarFilaSector(idx)}
+                  disabled={eSubmitting || eSectores.length === 1}
+                  title={eSectores.length === 1 ? 'Debe quedar al menos un sector' : 'Quitar sector'}>
+                  ✕
+                </button>
+              </div>
+            )
+          })}
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 }}>
+            <button type="button" className="btn btn-secondary"
+              onClick={agregarFilaSector}
+              disabled={eSubmitting || eSectores.length >= LETRAS.length}>
+              + Agregar sector
+            </button>
             <button type="submit" className="btn btn-primary"
               style={{ height: 42 }}
               disabled={eSubmitting || !eForm.nombre.trim()}>
-              {eSubmitting ? '…' : '+ Crear'}
+              {eSubmitting ? '…' : '+ Crear estadio'}
             </button>
           </div>
         </form>

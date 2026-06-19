@@ -1,5 +1,6 @@
 package com.grupo4.ticketing.service;
 
+import com.grupo4.ticketing.dto.CoberturaEstadoResponse;
 import com.grupo4.ticketing.dto.CoberturaPendienteResponse;
 import com.grupo4.ticketing.dto.CompradorRankingResponse;
 import com.grupo4.ticketing.dto.EventoVendidoResponse;
@@ -59,5 +60,13 @@ public class ReporteService {
                         c.getEstadioId(),
                         c.getLetraSector()))
                 .toList();
+    }
+
+    // RNE 5 — verificación de cierre: el evento "cumple" cuando no queda ningún sector asignado
+    // sin validación. Sirve como puerta de cierre/finalización del evento (no hay borrado de datos).
+    @Transactional(readOnly = true)
+    public CoberturaEstadoResponse verificarCobertura(Long eventoId) {
+        List<CoberturaPendienteResponse> pendientes = coberturaPendiente(eventoId);
+        return new CoberturaEstadoResponse(eventoId, pendientes.isEmpty(), pendientes);
     }
 }

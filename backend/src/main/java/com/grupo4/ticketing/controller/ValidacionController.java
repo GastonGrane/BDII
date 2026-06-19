@@ -39,4 +39,17 @@ public class ValidacionController {
             return ResponseEntity.status(e.getStatusCode()).body(new ErrorResponse(e.getReason()));
         }
     }
+
+    // GET /api/validaciones/cobertura — checklist de cobertura del funcionario autenticado (RNE 5):
+    // sus sectores asignados por evento, marcados como cumplidos o pendientes.
+    @GetMapping("/cobertura")
+    public ResponseEntity<?> coberturaPropia(HttpSession session) {
+        String mail;
+        try {
+            mail = SessionUtils.requireRol(session, "FUNCIONARIO");
+        } catch (ResponseStatusException e) {
+            return ResponseEntity.status(e.getStatusCode()).body(new ErrorResponse(e.getReason()));
+        }
+        return ResponseEntity.ok(validacionService.coberturaDelFuncionario(mail));
+    }
 }
