@@ -119,7 +119,7 @@ class AdminServiceTest {
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> service().crearEstadio(ADMIN, req));
-        assertTrue(ex.getMessage().contains("RNE 3"));
+        assertTrue(ex.getMessage().toLowerCase().contains("al menos un sector"));
         verify(estadioRepo, never()).save(any());
     }
 

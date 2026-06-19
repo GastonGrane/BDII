@@ -58,8 +58,10 @@ public class AdminService {
     }
 
     // ── POST /api/estadios ────────────────────────────────────────────────────
-    // RNE 3 (sectores habilitados por evento, parte 1): un estadio debe tener sectores cargados.
-    // Para que nunca exista un estadio "vacío" inutilizable, el alta exige al menos un sector.
+    // Mejora de modelo (apoya a RNE 3): un estadio se crea junto con sus sectores en el mismo
+    // payload y el alta exige al menos uno, para que nunca exista un estadio "vacío" inutilizable
+    // sobre el cual luego no se pueda dar de alta ningún evento. La RNE 3 literal (un evento debe
+    // habilitar >=1 sector) se aplica en crearEvento. Ver decisión DEC-09 en docs/decisiones.md.
     @Transactional
     public EstadioDetalleResponse crearEstadio(String mailAdmin, EstadioRequest req) {
         if (req.nombre() == null || req.nombre().isBlank())
@@ -69,7 +71,7 @@ public class AdminService {
         if (req.ciudad() == null || req.ciudad().isBlank())
             throw new IllegalArgumentException("La ciudad del estadio es requerida");
         if (req.sectores() == null || req.sectores().isEmpty())
-            throw new IllegalArgumentException("RNE 3: el estadio debe tener al menos un sector");
+            throw new IllegalArgumentException("El estadio debe tener al menos un sector");
 
         // El estadio debe pertenecer a la jurisdicción del administrador
         verificarJurisdiccion(mailAdmin, req.pais());

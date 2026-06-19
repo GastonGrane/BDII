@@ -56,7 +56,7 @@ export default function AdminEstadios() {
     ev.preventDefault()
     const sectores = eSectores.filter(s => s.letraSector && s.capacidadMax && s.costoEntrada)
     if (sectores.length === 0) {
-      setEError('RNE 3: agregá al menos un sector con letra, capacidad y costo.')
+      setEError('Agregá al menos un sector (con letra, capacidad y costo) antes de crear el estadio.')
       return
     }
     setEError(''); setESubmitting(true)
@@ -150,9 +150,9 @@ export default function AdminEstadios() {
             </div>
           </div>
 
-          {/* Sectores del estadio (RNE 3: al menos uno) */}
+          {/* Sectores del estadio: el alta exige al menos uno (mejora de modelo, apoya RNE 3) */}
           <div className="form-section-title" style={{ marginTop: 18 }}>
-            Sectores <span className="text-muted text-sm">(al menos uno — RNE 3)</span>
+            Sectores <span className="text-muted text-sm">(al menos uno)</span>
           </div>
           {eSectores.map((s, idx) => {
             const tomadas    = letrasTomadasEnAlta(idx)
