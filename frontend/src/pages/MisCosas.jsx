@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState, useCallback } from 'react'
+import { Fragment, useEffect, useState, useCallback, useRef } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { api } from '../api/client'
 import { useAuth } from '../contexts/AuthContext'
@@ -56,6 +56,10 @@ export default function MisCosas() {
   const [transfLoading,   setTransfLoading]   = useState(false)
   const [transfError,     setTransfError]     = useState('')
 
+  /* token dinámico: { [entradaId]: { codigoQR, expiraEn } } */
+  const [tokenData, setTokenData] = useState({})
+  const tokenDataRef = useRef({})
+
   /* qr copy feedback: entradaId | null */
   const [copiedQR, setCopiedQR] = useState(null)
 
@@ -74,6 +78,80 @@ export default function MisCosas() {
 
   useEffect(() => { loadAll() }, [loadAll])
 
+  // Sincroniza tokenData cuando cambian las entradas.
+  // Preserva el countdown local si el token no cambió para evitar saltos visuales.
+  // Elimina entradas que pasaron a Consumida/PendienteTransferencia.
+  useEffect(() => {
+    setTokenData(prev => {
+      const next = { ...prev }
+      const idsActivas = new Set()
+
+      entradas.forEach(e => {
+        if (e.estadoEntrada === 'Activa' && e.codigoQR) {
+          idsActivas.add(e.entradaId)
+          const yaExiste = prev[e.entradaId]
+          if (!yaExiste || yaExiste.codigoQR !== e.codigoQR) {
+            next[e.entradaId] = { codigoQR: e.codigoQR, expiraEn: e.tokenExpiraEn }
+          }
+        }
+      })
+
+      // Elimina entradas que ya no están activas (consumidas, en transferencia, etc.)
+      Object.keys(next).forEach(id => {
+        if (!idsActivas.has(Number(id))) delete next[Number(id)]
+      })
+
+      tokenDataRef.current = next
+      return next
+    })
+  }, [entradas])
+
+  // Poll silencioso cada 5s: detecta consumos realizados por el funcionario.
+  useEffect(() => {
+    if (tab !== 'entradas') return
+    const id = setInterval(() => {
+      api.misEntradas()
+        .then(nuevas => setEntradas(nuevas))
+        .catch(() => {})
+    }, 5000)
+    return () => clearInterval(id)
+  }, [tab])
+
+  // Poll silencioso de transferencias cada 5s, independiente del tab activo.
+  // Detecta transferencias nuevas recibidas y cambios de estado (aceptada/rechazada)
+  // sin que ninguno de los dos usuarios tenga que recargar la página.
+  useEffect(() => {
+    const id = setInterval(() => {
+      api.misTransferencias()
+        .then(nuevas => setTransferencias(nuevas))
+        .catch(() => {})
+    }, 5000)
+    return () => clearInterval(id)
+  }, [])
+
+  // Refresca tokens vencidos cada segundo y actualiza el countdown
+  useEffect(() => {
+    if (tab !== 'entradas') return
+    const id = setInterval(() => {
+      const now = new Date()
+      Object.entries(tokenDataRef.current).forEach(([entradaId, td]) => {
+        if (new Date(td.expiraEn) <= now) {
+          api.tokenVigente(Number(entradaId))
+            .then(res => {
+              tokenDataRef.current = {
+                ...tokenDataRef.current,
+                [entradaId]: { codigoQR: res.codigoQR, expiraEn: res.expiraEn },
+              }
+              setTokenData({ ...tokenDataRef.current })
+            })
+            .catch(() => {})
+        }
+      })
+      setTokenData(prev => ({ ...prev })) // tick para redibujar countdown
+    }, 1000)
+    return () => clearInterval(id)
+  }, [tab])
+
   /* ── copiar QR ── */
   function handleCopyQR(entradaId, codigoQR) {
     navigator.clipboard.writeText(codigoQR).then(() => {
@@ -85,6 +163,7 @@ export default function MisCosas() {
   /* ── crear transferencia ── */
   async function handleTransferir() {
     if (!mailDestino.trim()) { setTransfError('Ingresá el email del destinatario.'); return }
+    if (mailDestino.trim() === user.mail) { setTransfError('No podés transferirte una entrada a vos mismo.'); return }
     setTransfLoading(true); setTransfError('')
     try {
       await api.crearTransferencia({ entradaId: transfEntrada.entradaId, mailDestino: mailDestino.trim() })
@@ -194,32 +273,52 @@ export default function MisCosas() {
                           )}
                         </td>
                       </tr>
-                      {e.estadoEntrada === 'Activa' && e.codigoQR && (
-                        <tr style={{ background: 'var(--color-accent-light)' }}>
-                          <td colSpan={6} style={{ padding: '6px 16px 10px', borderBottom: '1px solid var(--color-accent-muted)' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                              <span style={{ fontSize: '.75rem', fontFamily: 'var(--font-heading)', fontWeight: 700, color: 'var(--color-accent-dark)', letterSpacing: '.5px', textTransform: 'uppercase' }}>
-                                Código QR
-                              </span>
-                              <code style={{
-                                fontFamily: 'var(--font-mono)', fontSize: '.82rem',
-                                background: 'rgba(0,0,0,.06)', padding: '3px 10px',
-                                borderRadius: 'var(--radius-sm)', letterSpacing: '.5px',
-                                userSelect: 'all', color: 'var(--color-text)',
-                              }}>
-                                {e.codigoQR}
-                              </code>
-                              <button
-                                className="btn btn-sm"
-                                style={{ background: copiedQR === e.entradaId ? 'var(--color-success)' : 'var(--color-accent)', color: '#fff', minWidth: 80 }}
-                                onClick={() => handleCopyQR(e.entradaId, e.codigoQR)}
-                              >
-                                {copiedQR === e.entradaId ? '✓ Copiado' : 'Copiar'}
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      )}
+                      {e.estadoEntrada === 'Activa' && tokenData[e.entradaId] && (() => {
+                        const td = tokenData[e.entradaId]
+                        const secsLeft = Math.max(0, Math.ceil((new Date(td.expiraEn) - new Date()) / 1000))
+                        const pct      = (secsLeft / 30) * 100
+                        const barColor = secsLeft <= 5 ? '#c00' : secsLeft <= 10 ? '#e07b00' : '#1a7f37'
+                        return (
+                          <tr style={{ background: 'var(--color-accent-light)' }}>
+                            <td colSpan={6} style={{ padding: '6px 16px 10px', borderBottom: '1px solid var(--color-accent-muted)' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                                <span style={{ fontSize: '.75rem', fontFamily: 'var(--font-heading)', fontWeight: 700, color: 'var(--color-accent-dark)', letterSpacing: '.5px', textTransform: 'uppercase' }}>
+                                  Código QR
+                                </span>
+                                <code style={{
+                                  fontFamily: 'var(--font-mono)', fontSize: '.82rem',
+                                  background: 'rgba(0,0,0,.06)', padding: '3px 10px',
+                                  borderRadius: 'var(--radius-sm)', letterSpacing: '.5px',
+                                  userSelect: 'all', color: 'var(--color-text)',
+                                }}>
+                                  {td.codigoQR}
+                                </code>
+                                <button
+                                  className="btn btn-sm"
+                                  style={{ background: copiedQR === e.entradaId ? 'var(--color-success)' : 'var(--color-accent)', color: '#fff', minWidth: 80 }}
+                                  onClick={() => handleCopyQR(e.entradaId, td.codigoQR)}
+                                >
+                                  {copiedQR === e.entradaId ? '✓ Copiado' : 'Copiar'}
+                                </button>
+                              </div>
+                              {/* barra de vencimiento */}
+                              <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <div style={{ flex: 1, height: 6, background: 'rgba(0,0,0,.1)', borderRadius: 99, overflow: 'hidden' }}>
+                                  <div style={{
+                                    height: '100%', width: `${pct}%`,
+                                    background: barColor,
+                                    transition: 'width 1s linear, background .3s',
+                                    borderRadius: 99,
+                                  }} />
+                                </div>
+                                <span style={{ fontSize: '.72rem', fontWeight: 700, minWidth: 28, color: barColor }}>
+                                  {secsLeft}s
+                                </span>
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      })()}
                     </Fragment>
                   ))}
                 </tbody>

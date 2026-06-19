@@ -41,6 +41,32 @@ BEGIN
 END //
 
 
+-- RNE 3: la capacidad del sector es un límite duro — no se puede sobre-vender (sobre-aforo).
+-- Disparador: BEFORE INSERT ON ENTRADA — cuenta las entradas ya emitidas para el mismo
+-- (EventoID, EstadioID, LetraSector) y las compara con SECTOR.CapacidadMax.
+-- Defensa en profundidad: la aplicación además toma un lock pesimista sobre la fila de SECTOR
+-- (ver VentaService) para serializar compras concurrentes del mismo sector y evitar la carrera.
+CREATE TRIGGER tr_entrada_capacidad
+BEFORE INSERT ON ENTRADA
+FOR EACH ROW
+BEGIN
+    DECLARE v_emitidas INT;
+    DECLARE v_capacidad INT;
+    SELECT COUNT(*) INTO v_emitidas
+    FROM ENTRADA
+    WHERE EventoID = NEW.EventoID
+      AND EstadioID = NEW.EstadioID
+      AND LetraSector = NEW.LetraSector;
+    SELECT CapacidadMax INTO v_capacidad
+    FROM SECTOR
+    WHERE EstadioID = NEW.EstadioID AND LetraSector = NEW.LetraSector;
+    IF v_emitidas >= v_capacidad THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'RNE 3: capacidad del sector agotada para el evento (sobre-aforo)';
+    END IF;
+END //
+
+
 -- RNE 7: el estado Consumida es irreversible.
 -- Disparador: BEFORE UPDATE ON ENTRADA — rechaza cualquier cambio que saque una entrada de Consumida.
 -- También previene reactivar una entrada consumida a través de una transferencia posterior
@@ -396,6 +422,141 @@ BEGIN
     WHERE EventoID = p_EventoID
       AND Cubierto = FALSE
     ORDER BY Mail_Funcionario, LetraSector;
+END //
+
+DELIMITER ;
+
+-- RNE: un administrador por país sede solo puede dar de alta eventos
+-- en estadios pertenecientes a su jurisdicción geográfica.
+-- Disparador: BEFORE INSERT ON EVENTO.
+-- Verifica que PaisSede del administrador coincida con Pais del estadio del evento.
+
+DELIMITER //
+
+CREATE TRIGGER tr_evento_admin_pais_insert
+BEFORE INSERT ON EVENTO
+FOR EACH ROW
+BEGIN
+    DECLARE v_pais_admin VARCHAR(100);
+    DECLARE v_pais_estadio VARCHAR(100);
+
+    SELECT PaisSede
+    INTO v_pais_admin
+    FROM ADMINISTRADOR
+    WHERE Mail_Usuario = NEW.Mail_Administrador;
+
+    SELECT Pais
+    INTO v_pais_estadio
+    FROM ESTADIO
+    WHERE EstadioID = NEW.EstadioID;
+
+    IF v_pais_admin <> v_pais_estadio THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'RNE: el administrador no puede dar de alta eventos fuera de su pais sede';
+    END IF;
+END //
+
+-- RNE: la misma regla debe cumplirse si se modifica el estadio
+-- o el administrador de un evento ya creado.
+-- Disparador: BEFORE UPDATE ON EVENTO.
+
+CREATE TRIGGER tr_evento_admin_pais_update
+BEFORE UPDATE ON EVENTO
+FOR EACH ROW
+BEGIN
+    DECLARE v_pais_admin VARCHAR(100);
+    DECLARE v_pais_estadio VARCHAR(100);
+
+    SELECT PaisSede
+    INTO v_pais_admin
+    FROM ADMINISTRADOR
+    WHERE Mail_Usuario = NEW.Mail_Administrador;
+
+    SELECT Pais
+    INTO v_pais_estadio
+    FROM ESTADIO
+    WHERE EstadioID = NEW.EstadioID;
+
+    IF v_pais_admin <> v_pais_estadio THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'RNE: el administrador no puede modificar eventos fuera de su pais sede';
+    END IF;
+END //
+
+DELIMITER ;
+
+-- RNE: los sectores habilitados para un evento deben pertenecer
+-- al mismo estadio en el que se realiza dicho evento.
+-- Disparador: BEFORE INSERT ON EVENTO_SECTOR.
+-- Evita habilitar, por error, sectores de otro estadio.
+
+DELIMITER //
+
+CREATE TRIGGER tr_evento_sector_estadio_insert
+BEFORE INSERT ON EVENTO_SECTOR
+FOR EACH ROW
+BEGIN
+    DECLARE v_estadio_evento INT UNSIGNED;
+
+    SELECT EstadioID
+    INTO v_estadio_evento
+    FROM EVENTO
+    WHERE EventoID = NEW.EventoID;
+
+    IF NEW.EstadioID <> v_estadio_evento THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'RNE: el sector habilitado no pertenece al estadio del evento';
+    END IF;
+END //
+
+-- RNE: la misma validación aplica si se modifica un sector habilitado
+-- de un evento existente.
+-- Disparador: BEFORE UPDATE ON EVENTO_SECTOR.
+
+CREATE TRIGGER tr_evento_sector_estadio_update
+BEFORE UPDATE ON EVENTO_SECTOR
+FOR EACH ROW
+BEGIN
+    DECLARE v_estadio_evento INT UNSIGNED;
+
+    SELECT EstadioID
+    INTO v_estadio_evento
+    FROM EVENTO
+    WHERE EventoID = NEW.EventoID;
+
+    IF NEW.EstadioID <> v_estadio_evento THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'RNE: el sector habilitado no pertenece al estadio del evento';
+    END IF;
+END //
+
+DELIMITER ;
+
+-- RNE: no pueden existir eventos superpuestos en un mismo estadio.
+-- Disparador: BEFORE UPDATE ON EVENTO.
+-- Nota: ya existe control al insertar; este agrega el mismo control al modificar.
+-- Supuesto: se considera una duración estimada de 4 horas por evento.
+
+DELIMITER //
+
+CREATE TRIGGER tr_evento_sin_solapamiento_update
+BEFORE UPDATE ON EVENTO
+FOR EACH ROW
+BEGIN
+    DECLARE v_count INT;
+
+    SELECT COUNT(*)
+    INTO v_count
+    FROM EVENTO
+    WHERE EventoID <> OLD.EventoID
+      AND EstadioID = NEW.EstadioID
+      AND NEW.FechaHora < DATE_ADD(FechaHora, INTERVAL 4 HOUR)
+      AND FechaHora < DATE_ADD(NEW.FechaHora, INTERVAL 4 HOUR);
+
+    IF v_count > 0 THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'RNE: existe un evento superpuesto en el mismo estadio';
+    END IF;
 END //
 
 DELIMITER ;

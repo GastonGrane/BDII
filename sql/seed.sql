@@ -73,11 +73,53 @@ VALUES
   (4, 'Activa', 150.00, 1, 1, 1, 'A', 'user1@test.com'),
   (5, 'Activa', 150.00, 1, 1, 1, 'A', 'user1@test.com');
 
--- Un token activo por entrada
-INSERT INTO TOKEN_QR (TokenID, CodigoQR, GeneradoEn, Activo, EntradaID)
+-- Un token activo por entrada. ExpiraEn = GeneradoEn + 30s (ventana RNE 10).
+-- Estos tokens del seed ya están vencidos respecto a la fecha actual: al abrir
+-- "Mis entradas" el backend genera uno nuevo vigente (ver TokenService).
+INSERT INTO TOKEN_QR (TokenID, CodigoQR, GeneradoEn, ExpiraEn, Activo, EntradaID)
 VALUES
-  (1, 'QR-E1-001', '2026-06-10 10:05:00', TRUE, 1),
-  (2, 'QR-E2-001', '2026-06-10 10:05:00', TRUE, 2),
-  (3, 'QR-E3-001', '2026-06-10 10:05:00', TRUE, 3),
-  (4, 'QR-E4-001', '2026-06-10 10:05:00', TRUE, 4),
-  (5, 'QR-E5-001', '2026-06-10 10:05:00', TRUE, 5);
+  (1, 'QR-E1-001', '2026-06-10 10:05:00', '2026-06-10 10:05:30', TRUE, 1),
+  (2, 'QR-E2-001', '2026-06-10 10:05:00', '2026-06-10 10:05:30', TRUE, 2),
+  (3, 'QR-E3-001', '2026-06-10 10:05:00', '2026-06-10 10:05:30', TRUE, 3),
+  (4, 'QR-E4-001', '2026-06-10 10:05:00', '2026-06-10 10:05:30', TRUE, 4),
+  (5, 'QR-E5-001', '2026-06-10 10:05:00', '2026-06-10 10:05:30', TRUE, 5);
+
+-- ---- DATOS ADICIONALES PARA REPORTES (rankings y eventos más vendidos) -------
+-- Segundo evento en el mismo estadio, sin solapar con el primero (RNE 4).
+INSERT INTO EVENTO (EventoID, EquipoLocal, EquipoVisitante, FechaHora, EstadioID, Mail_Administrador)
+VALUES (2, 'Argentina', 'México', '2026-06-25 18:00:00', 1, 'admin@ticketing.com');
+
+INSERT INTO EVENTO_SECTOR (EventoID, EstadioID, LetraSector)
+VALUES (2, 1, 'A'), (2, 1, 'C');
+
+-- VENTA 2: 3 entradas de user2 en el evento 1, sector B.
+INSERT INTO VENTA (VentaID, Fecha, Estado, Mail_Comprador, ComisionID)
+VALUES (2, '2026-06-11 12:00:00', 'Confirmada', 'user2@test.com', 1);
+
+INSERT INTO ENTRADA (EntradaID, EstadoEntrada, Costo_Historico, VentaID, EventoID, EstadioID, LetraSector, Mail_Propietario)
+VALUES
+  (6, 'Activa', 120.00, 2, 1, 1, 'B', 'user2@test.com'),
+  (7, 'Activa', 120.00, 2, 1, 1, 'B', 'user2@test.com'),
+  (8, 'Activa', 120.00, 2, 1, 1, 'B', 'user2@test.com');
+
+-- VENTA 3: 2 entradas de user3 en el evento 2, sector C.
+INSERT INTO VENTA (VentaID, Fecha, Estado, Mail_Comprador, ComisionID)
+VALUES (3, '2026-06-12 09:30:00', 'Confirmada', 'user3@test.com', 1);
+
+INSERT INTO ENTRADA (EntradaID, EstadoEntrada, Costo_Historico, VentaID, EventoID, EstadioID, LetraSector, Mail_Propietario)
+VALUES
+  (9,  'Activa', 200.00, 3, 2, 1, 'C', 'user3@test.com'),
+  (10, 'Activa', 200.00, 3, 2, 1, 'C', 'user3@test.com');
+
+INSERT INTO TOKEN_QR (TokenID, CodigoQR, GeneradoEn, ExpiraEn, Activo, EntradaID)
+VALUES
+  (6,  'QR-E6-001',  '2026-06-11 12:05:00', '2026-06-11 12:05:30', TRUE, 6),
+  (7,  'QR-E7-001',  '2026-06-11 12:05:00', '2026-06-11 12:05:30', TRUE, 7),
+  (8,  'QR-E8-001',  '2026-06-11 12:05:00', '2026-06-11 12:05:30', TRUE, 8),
+  (9,  'QR-E9-001',  '2026-06-12 09:35:00', '2026-06-12 09:35:30', TRUE, 9),
+  (10, 'QR-E10-001', '2026-06-12 09:35:00', '2026-06-12 09:35:30', TRUE, 10);
+
+-- Cobertura (RNE 5): el funcionario queda asignado también al sector B del evento 1.
+-- Como solo valida el sector A en la demo, sp_verificar_cobertura(1) mostrará B como pendiente.
+INSERT INTO ASIGNACION_FUNCIONARIO (Mail_Funcionario, EventoID, EstadioID, LetraSector)
+VALUES ('func@ticketing.com', 1, 1, 'B');

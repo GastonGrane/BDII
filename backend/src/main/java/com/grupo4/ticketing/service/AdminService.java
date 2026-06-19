@@ -38,15 +38,36 @@ public class AdminService {
         this.adminRepo        = adminRepo;
     }
 
+    // País de la jurisdicción del administrador autenticado (PaisSede).
+    private String paisSedeDe(String mailAdmin) {
+        return adminRepo.findById(mailAdmin)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.FORBIDDEN, "El usuario no es administrador"))
+                .getPaisSede();
+    }
+
+    // RNE: el administrador solo gestiona estadios y eventos de su país sede.
+    private void verificarJurisdiccion(String mailAdmin, String paisRecurso) {
+        String paisSede = paisSedeDe(mailAdmin);
+        if (!paisSede.equalsIgnoreCase(paisRecurso)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Fuera de jurisdicción: el administrador gestiona solo " + paisSede
+                    + " (recurso en " + paisRecurso + ")");
+        }
+    }
+
     // ── POST /api/estadios ────────────────────────────────────────────────────
     @Transactional
-    public EstadioResponse crearEstadio(EstadioRequest req) {
+    public EstadioResponse crearEstadio(String mailAdmin, EstadioRequest req) {
         if (req.nombre() == null || req.nombre().isBlank())
             throw new IllegalArgumentException("El nombre del estadio es requerido");
         if (req.pais() == null || req.pais().isBlank())
             throw new IllegalArgumentException("El país del estadio es requerido");
         if (req.ciudad() == null || req.ciudad().isBlank())
             throw new IllegalArgumentException("La ciudad del estadio es requerida");
+
+        // El estadio debe pertenecer a la jurisdicción del administrador
+        verificarJurisdiccion(mailAdmin, req.pais());
 
         Estadio e = new Estadio();
         e.setNombre(req.nombre());
@@ -60,10 +81,13 @@ public class AdminService {
     // ── POST /api/estadios/{id}/sectores ──────────────────────────────────────
     // Agrega un sector (A-D) al estadio dado; valida que la letra no esté ya registrada en ese estadio.
     @Transactional
-    public SectorListItem crearSector(Long estadioId, SectorRequest req) {
+    public SectorListItem crearSector(String mailAdmin, Long estadioId, SectorRequest req) {
         Estadio estadio = estadioRepo.findById(estadioId)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "Estadio no encontrado: " + estadioId));
+
+        // El estadio debe estar en la jurisdicción del administrador
+        verificarJurisdiccion(mailAdmin, estadio.getPais());
 
         if (req.capacidadMax() == null || req.capacidadMax() < 1)
             throw new IllegalArgumentException("CapacidadMax debe ser mayor a 0");
@@ -96,6 +120,9 @@ public class AdminService {
         Estadio estadio = estadioRepo.findById(req.estadioId())
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "Estadio no encontrado: " + req.estadioId()));
+
+        // El evento solo puede darse de alta en un estadio de la jurisdicción del administrador
+        verificarJurisdiccion(mailAdmin, estadio.getPais());
 
         Evento evento = new Evento();
         evento.setEquipoLocal(req.equipoLocal());
@@ -143,10 +170,12 @@ public class AdminService {
     }
 
     // ── GET /api/estadios ─────────────────────────────────────────────────────
-    // Devuelve todos los estadios con sus sectores anidados (estructura que usa el frontend para crear eventos).
+    // Devuelve los estadios de la jurisdicción del administrador con sus sectores anidados.
     @Transactional(readOnly = true)
-    public List<EstadioDetalleResponse> listarEstadios() {
+    public List<EstadioDetalleResponse> listarEstadios(String mailAdmin) {
+        String paisSede = paisSedeDe(mailAdmin);
         return estadioRepo.findAll().stream()
+                .filter(e -> paisSede.equalsIgnoreCase(e.getPais()))
                 .map(e -> {
                     List<SectorListItem> sectores = sectorRepo
                             .findByIdEstadioId(e.getEstadioId())

@@ -1,256 +1,124 @@
 # Sistema de Ticketing — Mundial 2026
 
-**Trabajo Obligatorio · Bases de Datos II · UCU**  
+**Trabajo Obligatorio · Bases de Datos II · UCU**
 **Grupo 4:** Sharon Bentos · Gastón Grané · Axel Hernández
 
-Stack: Java 21 + Spring Boot 3.3.5 · MySQL 8.x · React 18 + Vite
+## Descripción
 
----
+Demo cliente/servidor de un sistema integral de ticketing para los partidos del Mundial
+2026. Permite comercializar, transferir y validar entradas. La entrada es **dinámica**: no
+es una imagen estática, sino un activo digital con un dueño que puede cambiar por
+transferencia y un **token que muta cada 30 segundos** para evitar fraude por captura de
+pantalla, manteniendo la cadena histórica de custodia.
+
+## Qué problema resuelve
+
+- Venta centralizada de entradas con comisión, límite de 5 por transacción y control de
+  aforo (capacidad como límite duro).
+- Separación entre **comprador original** y **propietario actual**, con transferencias que
+  requieren aceptación (máximo 3 por entrada antes de validarse).
+- Validación de ingreso con **token dinámico**, **dispositivo autorizado** y **funcionario**,
+  con consumo irreversible y sin doble validación.
+- Roles con permisos: administrador por país sede, funcionario de validación y usuario
+  general.
+
+## Tecnologías
+
+- **Backend:** Java 21 + Spring Boot 3.3.5 (API REST, puerto 8080).
+- **Base de datos:** MySQL 8.x (InnoDB), esquema y lógica en SQL (triggers, procedimientos,
+  vistas). `ddl-auto=none`: el esquema lo crean los scripts, no Hibernate.
+- **Frontend:** React 18 + Vite (puerto 3000).
 
 ## Estructura del repositorio
 
 ```
 /
-├── backend/           Java/Spring Boot — API REST (puerto 8080)
-│   ├── mvnw / mvnw.cmd   Maven Wrapper (no requiere Maven global)
-│   └── src/
-├── frontend/          React + Vite — interfaz de usuario (puerto 3000)
-│   └── src/
+├── backend/      API REST en Java/Spring Boot (incluye Maven Wrapper ./mvnw)
+├── frontend/     Interfaz React + Vite
 ├── sql/
-│   ├── schema.sql     Creación de tablas y stored procedures
-│   ├── triggers.sql   Triggers (RNE 4, 7, 11, …)
-│   └── seed.sql       Datos de prueba para desarrollo
-├── .env.example       Plantilla de variables de entorno
+│   ├── schema.sql        Tablas, claves, restricciones, índices, vistas
+│   ├── triggers.sql      Triggers, procedimientos y vistas de negocio
+│   ├── seed.sql          Datos de prueba
+│   └── test_triggers.sql Suite de pruebas de triggers
+├── docs/         Documentación del obligatorio (ver abajo)
+├── .env.example  Plantilla de variables de entorno
 └── README.md
 ```
 
----
+## Documentación principal
 
-## 1. Requisitos previos
+| Documento | Contenido |
+|---|---|
+| [docs/00_INDICE.md](docs/00_INDICE.md) | Mapa de toda la documentación. |
+| [docs/01_FALTANTES_MAIN.md](docs/01_FALTANTES_MAIN.md) | Auditoría de lo que faltaba en `main`. |
+| [docs/02_CUMPLIMIENTO_RAMA.md](docs/02_CUMPLIMIENTO_RAMA.md) | Qué corrige/agrega la rama de corrección. |
+| [docs/03_CUMPLIMIENTO_LETRA.md](docs/03_CUMPLIMIENTO_LETRA.md) | Matriz requisito por requisito. |
+| [docs/04_MODELO_DATOS.md](docs/04_MODELO_DATOS.md) | MER conceptual, modelo lógico y físico; respeto del MER. |
+| [docs/05_BITACORA_MODELADO.md](docs/05_BITACORA_MODELADO.md) | Decisiones, supuestos, cardinalidades, restricciones. |
+| [docs/06_REGLAS_NEGOCIO.md](docs/06_REGLAS_NEGOCIO.md) | Reglas obligatorias y su implementación. |
+| [docs/07_GUIA_EJECUCION.md](docs/07_GUIA_EJECUCION.md) | Cómo correr el proyecto (Linux). |
+| [docs/08_GUIA_DEFENSA.md](docs/08_GUIA_DEFENSA.md) | Cómo defender el proyecto oralmente. |
+| [docs/09_FLUJO_DEMO.md](docs/09_FLUJO_DEMO.md) | Paso a paso de la demo. |
+| [docs/10_ENDPOINTS_O_PRUEBAS.md](docs/10_ENDPOINTS_O_PRUEBAS.md) | Endpoints REST con ejemplos cURL. |
+| [docs/11_DECISIONES_TECNICAS.md](docs/11_DECISIONES_TECNICAS.md) | Decisiones de implementación. |
+| [docs/12_LIMITACIONES_Y_OPCIONALES.md](docs/12_LIMITACIONES_Y_OPCIONALES.md) | Opcionales y limitaciones honestas. |
 
-Se asume que tenés **Git** instalado. Instalá el resto con
-[winget](https://learn.microsoft.com/es-es/windows/package-manager/winget/)
-(incluido en Windows 10 ≥ 1709 y Windows 11).
+## Cómo ejecutar (resumen)
 
-### JDK 21
-
-```powershell
-# Instalar
-winget install Microsoft.OpenJDK.21
-
-# Verificar — debe mostrar "21.x.x"
-java -version
-```
-
-> Reiniciá la terminal después de instalar para que `java` quede en el PATH.
-
-### Node.js LTS (v20 o superior)
-
-```powershell
-# Instalar
-winget install OpenJS.NodeJS.LTS
-
-# Verificar
-node --version   # v20.x o superior
-npm --version
-```
-
-### MySQL 8.x
-
-```powershell
-# Instalar
-winget install Oracle.MySQL
-
-# Verificar
-mysql --version   # 8.x.x
-```
-
-> Durante la instalación de MySQL el instalador pedirá una **contraseña para `root`**.
-> Anotala — la vas a necesitar en los pasos siguientes.
->
-> Si después de instalar el comando `mysql` no se reconoce, añadí
-> `C:\Program Files\MySQL\MySQL Server 8.x\bin` a tu variable de entorno `PATH`.
-
----
-
-## 2. Clonar el repositorio
+Requisitos: JDK 21, Node 20+, MySQL 8, Git. Guía completa en
+[docs/07_GUIA_EJECUCION.md](docs/07_GUIA_EJECUCION.md).
 
 ```bash
-git clone <URL-del-repositorio>
-cd <carpeta-del-repo>
-```
+# 1. Variables de entorno
+cp .env.example .env   # completar DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD
 
----
-
-## 3. Configurar variables de entorno
-
-```bash
-# En Git Bash o PowerShell
-cp .env.example .env
-```
-
-Abrí `.env` con cualquier editor y completá los valores para tu instalación local:
-
-```dotenv
-DB_HOST=localhost
-DB_PORT=3306
-DB_NAME=CD_Grupo4_local
-DB_USER=root
-DB_PASSWORD=tu_contraseña_de_root
-```
-
-> `.env` está en `.gitignore` y **nunca debe subirse al repositorio**.
-> Cada integrante del equipo tiene su propio `.env` con su contraseña local.
-
----
-
-## 4. Crear la base de datos local
-
-Abrí **Git Bash** (viene incluido con Git for Windows) en la raíz del proyecto.
-
-### 4a. Crear la base de datos vacía
-
-```bash
-mysql -u root -p -e "
-  CREATE DATABASE IF NOT EXISTS CD_Grupo4_local
-    CHARACTER SET utf8mb4
-    COLLATE utf8mb4_unicode_ci;"
-```
-
-### 4b. Ejecutar los scripts en orden
-
-Los archivos SQL referencian la base de producción (`USE CD_Grupo4;`).
-El siguiente bloque la reemplaza por `CD_Grupo4_local` al vuelo:
-
-```bash
+# 2. Base de datos (crear y cargar scripts)
+mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS CD_Grupo4_local CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
 SED='s/USE CD_Grupo4;/USE CD_Grupo4_local;/g'
+sed "$SED" sql/schema.sql   | mysql -u root -p CD_Grupo4_local
+sed "$SED" sql/triggers.sql | mysql -u root -p CD_Grupo4_local
+sed "$SED" sql/seed.sql     | mysql -u root -p CD_Grupo4_local
 
-sed "$SED" sql/schema.sql   | mysql -u root -p
-sed "$SED" sql/triggers.sql | mysql -u root -p
-sed "$SED" sql/seed.sql     | mysql -u root -p
+# 3. Backend
+cd backend && ./mvnw spring-boot:run     # http://localhost:8080
+
+# 4. Frontend (otra terminal)
+cd frontend && npm install && npm run dev # http://localhost:3000
 ```
 
-> MySQL pedirá la contraseña de root cada vez. Si preferís evitar la confirmación
-> repetida, podés usar la variable de entorno `MYSQL_PWD`:
->
-> ```bash
-> export MYSQL_PWD=tu_contraseña_de_root
-> SED='s/USE CD_Grupo4;/USE CD_Grupo4_local;/g'
-> sed "$SED" sql/schema.sql   | mysql -u root
-> sed "$SED" sql/triggers.sql | mysql -u root
-> sed "$SED" sql/seed.sql     | mysql -u root
-> unset MYSQL_PWD
-> ```
+## Scripts SQL
 
-### 4c. Verificar el resultado
+En la carpeta `sql/`: `schema.sql` (estructura), `triggers.sql` (reglas en BD),
+`seed.sql` (datos de prueba) y `test_triggers.sql` (pruebas). Se ejecutan en ese orden.
 
-```bash
-mysql -u root -p CD_Grupo4_local -e "
-  SELECT 'USUARIO'    AS tabla, COUNT(*) AS filas FROM USUARIO
-  UNION ALL SELECT 'EVENTO',     COUNT(*) FROM EVENTO
-  UNION ALL SELECT 'ENTRADA',    COUNT(*) FROM ENTRADA
-  UNION ALL SELECT 'TOKEN_QR',   COUNT(*) FROM TOKEN_QR
-  UNION ALL SELECT 'DISPOSITIVO',COUNT(*) FROM DISPOSITIVO;"
-```
-
-Resultado esperado: 5 usuarios, 1 evento, 5 entradas, 5 tokens, 1 dispositivo.
-
-### Resetear la BD a estado limpio
-
-Para volver al estado inicial del seed (eliminar todos los datos de prueba acumulados):
-
-```bash
-mysql -u root -p -e "
-  DROP DATABASE IF EXISTS CD_Grupo4_local;
-  CREATE DATABASE CD_Grupo4_local
-    CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-
-export MYSQL_PWD=tu_contraseña_de_root
-SED='s/USE CD_Grupo4;/USE CD_Grupo4_local;/g'
-sed "$SED" sql/schema.sql   | mysql -u root
-sed "$SED" sql/triggers.sql | mysql -u root
-sed "$SED" sql/seed.sql     | mysql -u root
-unset MYSQL_PWD
-```
-
----
-
-## 5. Levantar el backend
-
-El proyecto incluye **Maven Wrapper** (`mvnw` / `mvnw.cmd`), así que no necesitás
-tener Maven instalado globalmente. La primera ejecución descarga Maven 3.9.9 (~10 MB).
-
-Desde la carpeta `backend/`:
-
-```bash
-# Git Bash / macOS / Linux
-cd backend
-./mvnw spring-boot:run
-```
-
-```powershell
-# PowerShell / CMD en Windows
-cd backend
-.\mvnw.cmd spring-boot:run
-```
-
-El backend queda disponible en **http://localhost:8080**.
-
-> El archivo `.env` debe estar **un nivel arriba** de `backend/`
-> (es decir, en la raíz del repositorio), que es donde Spring Boot lo busca.
-
-### Alternativa: compilar el JAR y correrlo directamente
-
-```bash
-cd backend
-./mvnw package -DskipTests
-java -jar target/ticketing-0.0.1-SNAPSHOT.jar
-```
-
-Útil si `spring-boot:run` falla por conflictos con el proceso Maven.
-
----
-
-## 6. Levantar el frontend
-
-En **otra terminal**, desde la carpeta `frontend/`:
-
-```bash
-cd frontend
-npm install      # instala dependencias — solo necesario la primera vez
-npm run dev
-```
-
-El frontend queda disponible en **http://localhost:3000**.
-Todas las llamadas a `/api/*` se redirigen automáticamente al backend en 8080.
-
----
-
-## 7. Usuarios de prueba
+## Usuarios de prueba
 
 | Email | Contraseña | Rol |
 |---|---|---|
-| `admin@ticketing.com` | `admin123` | ADMINISTRADOR |
-| `func@ticketing.com` | `func123` | FUNCIONARIO |
+| `admin@ticketing.com` | `admin123` | ADMINISTRADOR (PaisSede: Uruguay) |
+| `func@ticketing.com` | `func123` | FUNCIONARIO (legajo LEG-001) |
 | `user1@test.com` | `user123` | USUARIO_GENERAL |
 | `user2@test.com` | `user123` | USUARIO_GENERAL |
 | `user3@test.com` | `user123` | USUARIO_GENERAL |
 
-### Datos pre-cargados por el seed
+Datos precargados: 1 estadio (Centenario) con sectores A/B/C/D, 2 eventos, ventas de
+ejemplo para user1/user2/user3, 1 dispositivo y tokens por entrada.
 
-| Entidad | Detalle |
-|---|---|
-| Estadio | Estadio Centenario · Montevideo, Uruguay |
-| Sectores | A ($150) · B ($120) · C ($200) · D ($300) |
-| Evento | Uruguay vs Brasil · 20/6/2026 18:00 · sectores A y B |
-| Entradas | 5 entradas Activas de `user1` en sector A |
-| Tokens QR | `QR-E1-001` … `QR-E5-001` (uno por entrada) |
-| Dispositivo | ID 1 · asignado a `func@ticketing.com` |
+## Cómo probar los endpoints
 
----
+Ejemplos de cURL para todo el flujo en
+[docs/10_ENDPOINTS_O_PRUEBAS.md](docs/10_ENDPOINTS_O_PRUEBAS.md).
+
+## Estado del proyecto
+
+Prototipo funcional con todos los requisitos obligatorios implementados o documentados.
+La matriz de cumplimiento está en [docs/03_CUMPLIMIENTO_LETRA.md](docs/03_CUMPLIMIENTO_LETRA.md).
+La rama de corrección es `correccion-bdii-ticketing-100`.
 
 ## Notas
 
-- Las contraseñas se almacenan en texto plano (sin hash) por alcance de la demo (DEC-08).
-- El flujo de pago no está implementado; las ventas nuevas quedan en estado `Pendiente` (DEC-08).
-- Para correr la suite de tests de triggers: `mysql -u root -p CD_Grupo4_local < sql/test_triggers.sql`.
+- Las contraseñas se almacenan en texto plano por alcance de la demo.
+- El token vence a los 30 segundos: para validar, usar el token vigente que muestra
+  "Mis entradas" o `GET /api/entradas/{id}/token`.
+- El MER conceptual del equipo (`BDIIFifaSegundaVersion.drawio.png`) es la base del modelo;
+  su descripción textual está en [docs/04_MODELO_DATOS.md](docs/04_MODELO_DATOS.md).

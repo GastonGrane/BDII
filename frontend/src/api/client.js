@@ -47,6 +47,8 @@ export const api = {
 
   // Entradas
   misEntradas: ()               => api.get('/entradas/mis-entradas'),
+  tokenVigente: (id)            => api.get(`/entradas/${id}/token`),
+  custodia: (id)                => api.get(`/entradas/${id}/custodia`),
 
   // Transferencias
   crearTransferencia: (body)    => api.post('/transferencias', body),
@@ -58,4 +60,10 @@ export const api = {
 
   // Validaciones
   validar: (body)               => api.post('/validaciones', body),
+
+  // Reportes (administrador)
+  eventosMasVendidos: ()        => api.get('/reportes/eventos-mas-vendidos'),
+  rankingCompradores: ()        => api.get('/reportes/ranking-compradores'),
+  cobertura: (eventoId)         => api.get(`/reportes/cobertura/${eventoId}`),
+
 }

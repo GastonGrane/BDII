@@ -17,13 +17,14 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
-import java.util.UUID;
+import java.util.Map;
 
 import static com.grupo4.ticketing.util.SessionUtils.extractDbMessage;
 
-// Gestión del flujo de compra: valida RNE 1 (máx. 5 entradas), crea VENTA + ENTRADAs +
-// TOKEN_QR en una sola transacción y calcula MontoTotal con comisión vigente (DEC-03).
+// Gestión del flujo de compra: valida RNE 1 (máx. 5 entradas) y RNE 3 (aforo), crea
+// VENTA + ENTRADAs + TOKEN_QR en una sola transacción y calcula MontoTotal con comisión vigente (DEC-03).
 @Service
 public class VentaService {
 
@@ -33,7 +34,7 @@ public class VentaService {
     private final SectorRepository         sectorRepo;
     private final VentaRepository          ventaRepo;
     private final EntradaRepository        entradaRepo;
-    private final TokenQrRepository        tokenRepo;
+    private final TokenService             tokenService;
 
     public VentaService(ComisionRepository comisionRepo,
                         UsuarioGeneralRepository ugRepo,
@@ -41,14 +42,14 @@ public class VentaService {
                         SectorRepository sectorRepo,
                         VentaRepository ventaRepo,
                         EntradaRepository entradaRepo,
-                        TokenQrRepository tokenRepo) {
+                        TokenService tokenService) {
         this.comisionRepo = comisionRepo;
         this.ugRepo       = ugRepo;
         this.esRepo       = esRepo;
         this.sectorRepo   = sectorRepo;
         this.ventaRepo    = ventaRepo;
         this.entradaRepo  = entradaRepo;
-        this.tokenRepo    = tokenRepo;
+        this.tokenService = tokenService;
     }
 
     // Procesa la compra completa: valida items, crea VENTA, genera una ENTRADA y un TOKEN_QR por cada ticket.
@@ -89,6 +90,9 @@ public class VentaService {
         // ── Crear ENTRADAs + TOKEN_QR
         List<Long> entradaIds = new ArrayList<>();
         BigDecimal subtotal   = BigDecimal.ZERO;
+        // Reserva acumulada dentro de esta misma compra, por (evento, sector),
+        // para no superar el aforo cuando varios ítems apuntan al mismo sector.
+        Map<EventoSectorId, Integer> reservadas = new HashMap<>();
 
         try {
             for (CompraItemRequest item : req.items()) {
@@ -105,11 +109,22 @@ public class VentaService {
                                 "El sector " + item.letraSector() + " no está habilitado "
                                 + "para el evento " + item.eventoId()));
 
-                // Precio del sector en el momento de la compra
+                // Lock pesimista del sector: serializa compras concurrentes del mismo sector (RNE 3)
                 SectorId sId = new SectorId(item.estadioId(), letra);
-                Sector sector = sectorRepo.findById(sId)
+                Sector sector = sectorRepo.findByIdForUpdate(sId)
                         .orElseThrow(() -> new IllegalArgumentException(
                                 "Sector " + item.letraSector() + " no encontrado en estadio " + item.estadioId()));
+
+                // RNE 3: control de aforo. emitidas (en BD) + ya reservadas en esta compra + pedido <= capacidad
+                long emitidas  = entradaRepo.contarPorEventoSector(item.eventoId(), item.estadioId(), letra);
+                int yaReservadas = reservadas.getOrDefault(esId, 0);
+                if (emitidas + yaReservadas + item.cantidad() > sector.getCapacidadMax()) {
+                    long disponibles = sector.getCapacidadMax() - emitidas - yaReservadas;
+                    throw new IllegalArgumentException(
+                            "RNE 3: capacidad insuficiente en el sector " + letra + " del evento " + item.eventoId()
+                            + " (disponibles: " + Math.max(disponibles, 0) + ", pedidas: " + item.cantidad() + ")");
+                }
+                reservadas.merge(esId, item.cantidad(), Integer::sum);
 
                 for (int i = 0; i < item.cantidad(); i++) {
                     Entrada entrada = new Entrada();
@@ -122,16 +137,12 @@ public class VentaService {
                     entradaIds.add(entrada.getEntradaId());
                     subtotal = subtotal.add(sector.getCostoEntrada());
 
-                    TokenQr token = new TokenQr();
-                    token.setCodigoQR(UUID.randomUUID().toString());
-                    token.setGeneradoEn(LocalDateTime.now());
-                    token.setActivo(true);
-                    token.setEntrada(entrada);
-                    tokenRepo.save(token);
+                    // Primer token dinámico de la entrada (vigente 30s — RNE 10)
+                    tokenService.generarParaEntrada(entrada);
                 }
             }
         } catch (DataAccessException e) {
-            // Trigger (RNE 1, etc.) rechazó el INSERT — propagar mensaje legible
+            // Trigger (RNE 1 / RNE 3) rechazó el INSERT — propagar mensaje legible
             throw new IllegalArgumentException(extractDbMessage(e));
         }
 

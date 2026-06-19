@@ -12,5 +12,6 @@ public record MisEntradasItemResponse(
         String letraSector,
         String estadoEntrada,
         BigDecimal costoHistorico,
-        String codigoQR          // null si el estado no es Activa
+        String codigoQR,             // token dinámico vigente; null si el estado no es Activa
+        LocalDateTime tokenExpiraEn  // fin de la ventana de 30s del token vigente
 ) {}

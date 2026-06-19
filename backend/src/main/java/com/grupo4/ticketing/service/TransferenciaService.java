@@ -42,26 +42,32 @@ public class TransferenciaService {
     @Transactional
     public TransferenciaResponse crearTransferencia(String mailOrigen, TransferenciaRequest req) {
 
-        // 1. Obtener la entrada
+        // 1. Validar que el destino no sea el mismo usuario emisor
+        if (mailOrigen.equals(req.mailDestino())) {
+            throw new IllegalArgumentException(
+                    "No podés transferirte una entrada a vos mismo");
+        }
+
+        // 2. Obtener la entrada
         Entrada entrada = entradaRepo.findById(req.entradaId())
                 .orElseThrow(() -> new IllegalArgumentException(
                         "Entrada no encontrada: " + req.entradaId()));
 
-        // 2. El usuario logueado debe ser el propietario actual (relación Posee, no Genera)
+        // 3. El usuario logueado debe ser el propietario actual (relación Posee, no Genera)
         String propietarioActual = entrada.getPropietario().getMailUsuario();
         if (!propietarioActual.equals(mailOrigen)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN,
                     "No eres el propietario actual de esta entrada");
         }
 
-        // 3. RNE 6 pre-validado: la entrada debe estar Activa
+        // 4. RNE 6 pre-validado: la entrada debe estar Activa
         if (entrada.getEstadoEntrada() != EstadoEntrada.Activa) {
             throw new IllegalArgumentException(
                     "RNE 6: la entrada debe estar en estado Activa para transferirse "
                     + "(estado actual: " + entrada.getEstadoEntrada() + ")");
         }
 
-        // 4. RNE 2 pre-validado: máximo 3 transferencias no rechazadas
+        // 5. RNE 2 pre-validado: máximo 3 transferencias no rechazadas
         long noRechazadas = transferenciaRepo.countByEntradaEntradaIdAndEstadoNot(
                 req.entradaId(), EstadoTransferencia.Rechazada);
         if (noRechazadas >= 3) {
@@ -69,13 +75,13 @@ public class TransferenciaService {
                     "RNE 2: esta entrada ya tiene 3 transferencias — no puede transferirse más");
         }
 
-        // 5. El destinatario debe ser un USUARIO_GENERAL registrado
+        // 6. El destinatario debe ser un USUARIO_GENERAL registrado
         if (!ugRepo.existsById(req.mailDestino())) {
             throw new IllegalArgumentException(
                     "El destinatario '" + req.mailDestino() + "' no existe o no es un usuario general");
         }
 
-        // 6. Crear TRANSFERENCIA — el trigger tr_transferencia_marcar_pendiente
+        // 7. Crear TRANSFERENCIA — el trigger tr_transferencia_marcar_pendiente
         //    pone la ENTRADA en PendienteTransferencia automáticamente
         Transferencia t = new Transferencia();
         t.setFechaSol(LocalDateTime.now());
