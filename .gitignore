@@ -1,7 +1,5 @@
 # Credenciales y setup local — nunca al repo público
 .env
-docs/local-setup-NO-SUBIR.md
-docs/Informe_MER_Normalizacion_Ticketing.pdf
 
 # Java / Spring Boot
 target/

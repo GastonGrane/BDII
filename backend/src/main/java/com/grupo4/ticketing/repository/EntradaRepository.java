@@ -10,7 +10,6 @@ import java.util.List;
 
 public interface EntradaRepository extends JpaRepository<Entrada, Long> {
     List<Entrada> findByPropietarioMailUsuario(String mailPropietario);
-    List<Entrada> findByVentaVentaId(Long ventaId);
     long countByVentaVentaId(Long ventaId);
 
     // Entradas ya emitidas para un (evento, sector): base del control de aforo / sobre-aforo.

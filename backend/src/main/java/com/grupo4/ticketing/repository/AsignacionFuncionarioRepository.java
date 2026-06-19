@@ -10,7 +10,6 @@ import org.springframework.data.repository.query.Param;
 import java.util.List;
 
 public interface AsignacionFuncionarioRepository extends JpaRepository<AsignacionFuncionario, AsignacionFuncionarioId> {
-    List<AsignacionFuncionario> findByIdMailFuncionario(String mailFuncionario);
 
     // RNE 5: sectores asignados a algún funcionario en un evento donde aún no validó
     // ninguna entrada. Usa la vista v_cobertura_funcionario (ver triggers.sql).
