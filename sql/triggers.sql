@@ -11,7 +11,8 @@
 --   Módulo 6 — COMISION      (RNE 12: guard + SP de alta)
 --   Módulo 7 — RNE 5         (vista de cobertura + SP de verificación)
 --
--- RNE 8 (propietario al validar): enforceado en capa de aplicación — ver DEC-06.
+-- Nota: no se valida la identidad del propietario al escanear el QR (no existe tal
+--       requisito en la letra). Cualquier portador de un token vigente puede ingresar.
 -- =============================================================================
 
 USE CD_Grupo4;

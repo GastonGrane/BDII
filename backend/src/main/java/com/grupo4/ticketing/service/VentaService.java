@@ -80,10 +80,10 @@ public class VentaService {
         UsuarioGeneral comprador = ugRepo.getReferenceById(mailComprador);
 
         // ── Crear VENTA
-        // La compra se confirma automáticamente al completarse: el sistema entrega la
-        // entrada (Activa + TOKEN_QR) en el acto y no hay pasarela de pago externa ni
-        // confirmación manual. El estado Pendiente queda reservado para futuros flujos
-        // con pago diferido/validación manual. Ver README → "Estado de la compra".
+        // Sin pasarela de pago: la compra se confirma de inmediato al procesarse
+        // (la entrada se entrega en el acto con su TOKEN_QR), por eso se salta el
+        // estado Pendiente. El dominio {Pendiente, Confirmada, Paga} se mantiene en
+        // el enum/schema por completitud respecto a la letra; el flujo solo usa Confirmada.
         Venta venta = new Venta();
         venta.setFecha(LocalDateTime.now());
         venta.setEstado(EstadoVenta.Confirmada);

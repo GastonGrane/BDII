@@ -23,6 +23,7 @@ import static com.grupo4.ticketing.util.SessionUtils.extractDbMessage;
 // Validación de ingreso al estadio: verifica token activo (RNE 9), dispositivo asignado al
 // funcionario (RNE 11) y que la entrada no esté consumida (RNE 7 — defensa en profundidad).
 // El trigger tr_validacion_post_insert completa el marcado de ENTRADA como Consumida.
+// No se verifica la identidad del propietario: basta con presentar un token QR vigente.
 @Service
 public class ValidacionService {
 

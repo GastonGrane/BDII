@@ -345,7 +345,6 @@ CREATE TABLE IF NOT EXISTS VALIDACION (
         REFERENCES DISPOSITIVO(DispositivoID)
         ON DELETE RESTRICT ON UPDATE CASCADE,
     -- RNE 7 (validación irreversible): trigger tr_validacion_irreversible
-    -- RNE 8 (propietario al validar): trigger tr_validacion_propietario
     -- RNE 9 (token activo al validar): trigger tr_validacion_token_activo
     INDEX idx_val_funcionario  (Mail_Funcionario),
     INDEX idx_val_dispositivo  (DispositivoID),

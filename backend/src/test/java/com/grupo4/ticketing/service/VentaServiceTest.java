@@ -25,7 +25,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.*;
 
 // Verifica la decisión funcional: una compra exitosa se guarda como Confirmada
-// (no Pendiente) y la entrada queda disponible (Activa + token). Ver README → "Estado de la compra".
+// (no Pendiente) y la entrada queda disponible (Activa + token).
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
 class VentaServiceTest {
