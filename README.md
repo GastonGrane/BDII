@@ -36,6 +36,25 @@ La primera vez descarga imágenes y compila — puede tardar unos minutos.
 
 ---
 
+## Estado de la compra (decisión funcional)
+
+En esta implementación, **la compra de entrada se considera confirmada automáticamente
+al completarse correctamente**. Al comprar, el sistema ya genera y entrega la entrada
+(estado `Activa` + token QR), por lo que la venta se guarda directamente con estado
+`Confirmada` y así aparece en "Mis compras".
+
+- **No** se implementa pasarela de pago externa ni confirmación manual.
+- El estado **`Pendiente`** queda **reservado** para futuros flujos donde exista pago
+  externo, validación manual o confirmación diferida. Se mantiene en el modelo
+  (enum `EstadoVenta` y `ENUM` de la tabla `VENTA`) por compatibilidad y documentación,
+  pero hoy no es el estado de una compra finalizada con éxito.
+
+Referencias en el código: `VentaService.comprar` (asigna `EstadoVenta.Confirmada`),
+`entity/enums/EstadoVenta.java` y los badges de `frontend/src/pages/MisCosas.jsx`
+(`Confirmada` en verde = estado correcto, `Pendiente` en amarillo = advertencia).
+
+---
+
 ## Apagar
 
 ```bash

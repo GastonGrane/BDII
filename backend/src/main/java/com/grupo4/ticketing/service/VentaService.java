@@ -80,9 +80,13 @@ public class VentaService {
         UsuarioGeneral comprador = ugRepo.getReferenceById(mailComprador);
 
         // ── Crear VENTA
+        // La compra se confirma automáticamente al completarse: el sistema entrega la
+        // entrada (Activa + TOKEN_QR) en el acto y no hay pasarela de pago externa ni
+        // confirmación manual. El estado Pendiente queda reservado para futuros flujos
+        // con pago diferido/validación manual. Ver README → "Estado de la compra".
         Venta venta = new Venta();
         venta.setFecha(LocalDateTime.now());
-        venta.setEstado(EstadoVenta.Pendiente);
+        venta.setEstado(EstadoVenta.Confirmada);
         venta.setComprador(comprador);
         venta.setComision(comision);
         venta = ventaRepo.save(venta);
